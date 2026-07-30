@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#3b6ef5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Timetable">
+<title>Weekly Timetable</title>
+<style>
+  :root{
+    --bg:#f7f7f8;--panel:#fff;--line:#e3e3e8;--text:#1c1c1e;--muted:#6b6b72;
+    --accent:#3b6ef5;--warn:#b23;--grid:#ececed;--slotpx:24px;
+    --hour:#ececed;--half:#f4f4f6;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#151517;--panel:#1e1e21;--line:#303035;--text:#eaeaec;--muted:#9a9aa2;
+          --accent:#6b93ff;--warn:#ff7a7a;--grid:#242428;--hour:#242428;--half:#202024;}
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font:14px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--text);
+    display:flex;flex-direction:column;min-height:100dvh}
+  h1{font-size:16px;margin:0}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:20px 0 8px}
+  .topbar{display:flex;align-items:center;gap:10px;padding:12px 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;
+    padding-top:max(12px,env(safe-area-inset-top))}
+  .topbar h1{font-size:17px;letter-spacing:-.01em}
+  .topbar .now{margin-left:auto;font-size:12px;color:var(--muted);font-weight:600}
+  main{flex:1;overflow:auto;padding:14px;-webkit-overflow-scrolling:touch}
+  .view{display:none;max-width:560px;margin:0 auto}
+  #view-schedule{max-width:none}
+  body[data-view=schedule] #view-schedule,
+  body[data-view=activities] #view-activities,
+  body[data-view=reminders] #view-reminders,
+  body[data-view=settings] #view-settings{display:block}
+  /* bottom ribbon nav (Instagram-style) */
+  .ribbon{display:flex;background:var(--panel);border-top:1px solid var(--line);z-index:20;
+    padding-bottom:env(safe-area-inset-bottom)}
+  .ribbon button{flex:1;background:none;border:none;border-radius:0;color:var(--muted);
+    font-weight:600;font-size:10.5px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px}
+  .ribbon button .ic{font-size:20px;line-height:1;filter:grayscale(.4);opacity:.7}
+  .ribbon button[aria-current=true]{color:var(--accent)}
+  .ribbon button[aria-current=true] .ic{filter:none;opacity:1}
+  /* month / week navigator */
+  .wknav{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .wknav select{flex:1;font-weight:600}
+  .wknav .tiny{flex:0 0 auto;font-size:16px;line-height:1;padding:6px 12px}
+  .wklabel{font-size:12.5px;color:var(--muted);margin:0 0 10px;font-weight:600}
+  .hdnum{display:block;font-size:10px;font-weight:500;color:var(--muted);margin-top:1px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;
+    box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 2px}
+  input,select,button{font:inherit;color:var(--text);background:var(--bg);
+    border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+  input,select{width:100%}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+  button{cursor:pointer;background:var(--accent);color:#fff;border:none;font-weight:600}
+  button.sec{background:var(--bg);color:var(--text);border:1px solid var(--line);font-weight:500}
+  button.tiny{padding:3px 8px;font-size:12px}
+  button:hover{filter:brightness(1.05)}button:active{transform:translateY(1px)}
+  .acts{list-style:none;margin:0;padding:0}
+  .acts li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .dot{width:12px;height:12px;border-radius:3px;flex:0 0 12px}
+  .meta{color:var(--muted);font-size:12px}
+  .grow{flex:1;min-width:0}.grow b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  .toolbar .spacer{flex:1}
+  .hint{font-size:12px;color:var(--muted);margin:0 0 10px}
+  .warns{color:var(--warn);font-size:12px;margin:0 0 10px;padding-left:18px}
+  .chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px;padding-bottom:2px}
+  .chips button{flex:0 0 auto}
+  .chips button[aria-current=true]{background:var(--accent);color:#fff}
+  /* calendar */
+  .cal{display:grid;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:100%}
+  .cal .hd{background:var(--panel);font-weight:600;text-align:center;padding:6px 2px;
+    border-bottom:1px solid var(--line);font-size:12px;position:sticky;top:0}
+  .timecol{position:relative}
+  .tlabel{font-size:11px;color:var(--muted);text-align:right;padding-right:6px;
+    position:absolute;right:0;transform:translateY(-50%)}
+  .daycol{position:relative;border-left:1px solid var(--line);background-color:var(--panel);
+    background-image:
+      repeating-linear-gradient(to bottom,var(--hour) 0 1px,transparent 1px calc(var(--slotpx)*2)),
+      repeating-linear-gradient(to bottom,var(--half) 0 1px,transparent 1px var(--slotpx));
+    background-position:0 var(--hshift,0px),0 0}
+  .block{position:absolute;left:2px;right:2px;border-radius:5px;padding:3px 5px;
+    font-size:11px;color:#fff;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.15);
+    cursor:grab;touch-action:none;user-select:none}
+  .block small{display:block;opacity:.85}
+  .block .pin{position:absolute;top:2px;right:4px;font-size:10px}
+  .reminder{position:absolute;width:20px;height:20px;border-radius:3px;z-index:5;cursor:pointer;
+    box-shadow:0 1px 3px rgba(0,0,0,.35);border:1px solid rgba(0,0,0,.3)}
+  .reminder:hover{filter:brightness(1.08)}
+  .reminder::after{content:'';position:absolute;right:0;bottom:0;width:0;height:0;border-style:solid;
+    border-width:0 0 8px 8px;border-color:transparent transparent rgba(0,0,0,.25) transparent}
+  .swatch{flex:0 0 26px;height:26px;border-radius:6px;border:2px solid transparent;cursor:pointer;padding:0}
+  .swatch[aria-current=true]{border-color:var(--text)}
+  dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);
+    padding:18px;width:340px;max-width:92vw}
+  dialog::backdrop{background:rgba(0,0,0,.4)}
+  .hide{display:none!important}
+  input[type=color]{height:36px;padding:2px}
+  code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
+  #qrImg{border-radius:8px;background:#fff;padding:6px;max-width:100%}
+  @media print{.topbar,.toolbar,.chips,.hint,.ribbon,.wknav{display:none}main{overflow:visible}}
+</style>
+</head>
+<body data-view="schedule">
+<header class="topbar">
+  <span style="font-size:22px">🗓️</span>
+  <h1>Timetable</h1>
+  <span class="now" id="topNow"></span>
+</header>
+
+<main>
+  <!-- ============ SCHEDULE PAGE ============ -->
+  <section id="view-schedule" class="view">
+    <div class="wknav">
+      <button id="mPrev" class="sec tiny" aria-label="Previous month">‹</button>
+      <select id="monthSel"></select>
+      <button id="mNext" class="sec tiny" aria-label="Next month">›</button>
+    </div>
+    <div id="weekChips" class="chips"></div>
+    <div id="wkLabel" class="wklabel"></div>
+    <div class="toolbar">
+      <button id="genBtn">Generate</button>
+      <button id="shuffleBtn" class="sec">Shuffle</button>
+      <button id="modeBtn" class="sec">Day view</button>
+    </div>
+    <p class="hint">Drag a block to move it into any free slot. Double-click a 📌 pinned block to release it.</p>
+    <div id="chips" class="chips hide"></div>
+    <ul id="warns" class="warns"></ul>
+    <div id="cal" class="cal"></div>
+  </section>
+
+  <!-- ============ ACTIVITIES ============ -->
+  <section id="view-activities" class="view">
+    <div class="panel">
+      <h2>Activities</h2>
+      <ul id="actList" class="acts"></ul>
+      <button id="addBtn" class="sec" style="width:100%;margin-top:12px">+ Add activity</button>
+    </div>
+  </section>
+
+  <!-- ============ REMINDERS ============ -->
+  <section id="view-reminders" class="view">
+    <div class="panel">
+      <h2>Reminders</h2>
+      <p class="hint">Neon notes that sit beside your schedule — they can overlap busy slots.</p>
+      <ul id="remList" class="acts"></ul>
+      <div class="row" style="margin-top:8px">
+        <input id="rName" placeholder="Reminder" style="flex:2">
+        <select id="rDay"></select>
+        <input id="rTime" type="time" step="900" style="flex:0 0 100px">
+      </div>
+      <div id="rSwatches" class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap"></div>
+      <button id="rAdd" class="sec" style="width:100%;margin-top:10px">+ Add reminder</button>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="view-settings" class="view">
+    <div class="panel">
+      <h2>Day window</h2>
+      <div class="row">
+        <div><label>Start</label><input id="cfgStart" type="time" step="1800"></div>
+        <div><label>End</label><input id="cfgEnd" type="time" step="1800"></div>
+      </div>
+      <label>Active days</label>
+      <div id="cfgDays" class="row" style="flex-wrap:wrap;gap:5px"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Get it on your phone</h2>
+      <p class="hint">Scan on Android or iOS to open the app, then use the browser's <b>Add to Home Screen</b> to install it.</p>
+      <div style="text-align:center;margin:6px 0 4px"><img id="qrImg" width="220" height="220" alt=""></div>
+      <label>App URL (the address your phone opens)</label>
+      <input id="qrUrl" placeholder="https://…">
+      <p id="qrWarn" class="hint hide" style="color:var(--warn)">This is a <b>file://</b> path — a phone can't open it. Serve the app (below), then paste that address here.</p>
+      <p class="hint">Fast local option (phone on the same Wi-Fi): run <code>npx serve</code> in this folder and paste the shown <code>http://192.168.x.x:3000</code> address above.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Notifications</h2>
+      <p class="hint">Alert you when a reminder falls due.</p>
+      <div class="row">
+        <button id="notifBtn">Enable notifications</button>
+        <button id="notifTest" class="sec">Test</button>
+      </div>
+      <p id="notifStatus" class="hint" style="margin-top:8px"></p>
+    </div>
+
+    <div class="panel">
+      <h2>Sync &amp; export</h2>
+      <p class="hint">No server: copy a share link or a backup file to move between devices.</p>
+      <div class="row" style="flex-wrap:wrap">
+        <button id="icsBtn" class="sec">Calendar (.ics)</button>
+        <button id="shareBtn" class="sec">Copy share link</button>
+      </div>
+      <div class="row" style="flex-wrap:wrap;margin-top:8px">
+        <button id="expBtn" class="sec">Export backup</button>
+        <button id="impBtn" class="sec">Import backup</button>
+        <input id="impFile" type="file" accept=".json" class="hide">
+      </div>
+      <button id="resetPinsBtn" class="sec" style="width:100%;margin-top:8px">Reset drag adjustments</button>
+    </div>
+  </section>
+</main>
+
+<nav class="ribbon">
+  <button data-nav="schedule"><span class="ic">🗓️</span>Schedule</button>
+  <button data-nav="activities"><span class="ic">📋</span>Activities</button>
+  <button data-nav="reminders"><span class="ic">🔔</span>Reminders</button>
+  <button data-nav="settings"><span class="ic">⚙️</span>Settings</button>
+</nav>
+
+<!-- activity editor -->
+<dialog id="dlg">
+  <h1 id="dlgTitle" style="font-size:16px;margin-bottom:6px">Activity</h1>
+  <label>Name</label><input id="fName">
+  <label>Colour</label><input id="fColor" type="color">
+  <label>Type</label>
+  <select id="fType"><option value="flex">Flexible (auto-placed)</option><option value="fixed">Fixed slot</option></select>
+  <div id="fixedFields">
+    <label>Day</label><select id="fDay"></select>
+    <div class="row">
+      <div><label>Start</label><input id="fStart" type="time" step="900"></div>
+      <div><label>Duration (min)</label><input id="fDur1" type="number" min="15" step="15" value="60"></div>
+    </div>
+  </div>
+  <div id="flexFields">
+    <div class="row">
+      <div><label>Session length (min)</label><input id="fLen" type="number" min="15" step="15" value="60"></div>
+      <div><label>Sessions</label><input id="fCount" type="number" min="1" step="1" value="3"></div>
+    </div>
+    <label>Frequency</label>
+    <select id="fFreq"><option value="weekly">Every week</option><option value="fortnight">Fortnightly</option></select>
+    <div id="fWeekRow" class="hide"><label>Which week</label>
+      <select id="fWeek"><option value="A">A</option><option value="B">B</option></select></div>
+    <label>Preferred time of day</label>
+    <select id="fTod"><option value="any">Any</option><option value="morning">Morning</option>
+      <option value="afternoon">Afternoon</option><option value="evening">Evening</option></select>
+    <label>Restrict to days (optional, ctrl/⌘-click)</label>
+    <select id="fDaysAllow" multiple size="4" style="height:auto"></select>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <button id="dlgSave">Save</button>
+    <button id="dlgDel" class="sec">Delete</button>
+    <button id="dlgCancel" class="sec">Cancel</button>
+  </div>
+</dialog>
+
+<!-- reminder viewer -->
+<dialog id="remDlg">
+  <h1 style="font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Reminder</h1>
+  <p id="remDlgTime" class="meta" style="margin:0 0 10px"></p>
+  <p id="remDlgBody" style="font-size:15px;font-weight:600;margin:0 0 16px;padding-left:8px"></p>
+  <div class="row">
+    <button id="remDlgClose">Close</button>
+    <button id="remDlgDel" class="sec">Delete</button>
+  </div>
+</dialog>
+
+<script>
+const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const TOD={any:[0,1440],morning:[0,720],afternoon:[720,1020],evening:[1020,1440]};
+const SLOT=30,PX=24;
+const mins=s=>{const[a,b]=s.split(':').map(Number);return a*60+b;};
+const hhmm=m=>String(m/60|0).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+const uid=()=>Math.random().toString(36).slice(2,8);
+const $=id=>document.getElementById(id);
+const NEON=['#ccff00','#39ff14','#00fff7','#ff2ec4','#ff073a','#ff9d00','#ffff00','#bf5bff'];
+// greedy interval lanes so overlapping reminders sit side by side; returns lane count
+function laneAssign(items){
+  const ends=[];
+  for(const it of items){
+    let l=ends.findIndex(e=>e<=it.start);
+    if(l<0){l=ends.length;ends.push(it.end);}else ends[l]=it.end;
+    it.lane=l;
+  }
+  return ends.length;
+}
+
+// ---------- week model: real dates, ~52 weeks ahead ----------
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MS_WK=7*864e5;
+const ANCHOR=new Date(2024,0,1);                 // a Monday; fixed reference for fortnight parity
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
+const mondayOf=d=>addDays(d,-((d.getDay()+6)%7));
+const isoDate=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const weekParity=mon=>((Math.round((mon-ANCHOR)/MS_WK)%2)+2)%2?'B':'A';
+const monthKey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+function weeksInMonth(y,m){let mon=mondayOf(new Date(y,m,1));
+  if(mon.getMonth()!==m||mon.getFullYear()!==y)mon=addDays(mon,7);
+  const out=[];while(mon.getMonth()===m&&mon.getFullYear()===y){out.push(mon);mon=addDays(mon,7);}return out;}
+let curMon=mondayOf(new Date());                 // the Monday of the week being viewed
+
+// ---------- scheduling core ----------
+function carve(free,s,e){
+  const out=[];
+  for(const iv of free){
+    if(e<=iv.start||s>=iv.end){out.push(iv);continue;}
+    if(iv.start<s)out.push({start:iv.start,end:s});
+    if(e<iv.end)out.push({start:e,end:iv.end});
+  }
+  return out;
+}
+function schedule(cfg,acts,week,order,pins){
+  const parity=typeof week==='object'?week.parity:week;  // fortnight phase A/B
+  const key=typeof week==='object'?week.key:week;         // per-week pin bucket (a Monday's date)
+  const days=cfg.days,free={},load={},dayActs={};
+  days.forEach(d=>{free[d]=[{start:cfg.dayStart,end:cfg.dayEnd}];load[d]=0;dayActs[d]=new Set();});
+  const placements=[],warnings=[];
+  const block=(day,s,e,act,kind,ref)=>{free[day]=carve(free[day],s,e);
+    placements.push({day,start:s,end:e,act,kind,ref});dayActs[day].add(act.id);load[day]+=e-s;};
+  const fits=(day,s,e)=>free[day].some(iv=>s>=iv.start&&e<=iv.end);
+
+  for(const a of acts.filter(x=>x.type==='fixed')){
+    if(!days.includes(a.day)){warnings.push(`${a.name}: its day isn't active`);continue;}
+    const s=mins(a.start),e=s+a.dur;
+    if(!fits(a.day,s,e)){warnings.push(`${a.name}: fixed slot is out of range or clashes`);continue;}
+    block(a.day,s,e,a,'fixed');
+  }
+  // pinned (drag-adjusted) sessions for this week, placed like fixed
+  const wkPins=(pins||[]).filter(p=>p.week===key);
+  for(const p of wkPins){
+    const a=acts.find(x=>x.id===p.actId);if(!a)continue;
+    const s=p.start,e=s+p.dur;
+    if(!days.includes(p.day)||!fits(p.day,s,e)){warnings.push(`${a.name}: pinned slot no longer fits — released`);
+      p._drop=true;continue;}
+    block(p.day,s,e,a,'pin',p);
+  }
+  // flexible sessions, minus what's already pinned
+  let sessions=[];
+  for(const a of acts.filter(x=>x.type==='flex')){
+    if(a.freq==='fortnight'&&(a.week||'A')!==parity)continue;
+    const already=wkPins.filter(p=>p.actId===a.id).length;
+    for(let i=0;i<Math.max(0,a.count-already);i++)sessions.push(a);
+  }
+  sessions.sort((p,q)=>q.dur-p.dur||(order?order[p.id]-order[q.id]:0));
+  for(const a of sessions){
+    const[tS,tE]=TOD[a.tod||'any'];
+    const allow=(a.days&&a.days.length)?a.days.filter(d=>days.includes(d)):days;
+    const cand=[...allow].sort((d1,d2)=>{
+      const h1=dayActs[d1].has(a.id)?1:0,h2=dayActs[d2].has(a.id)?1:0;
+      return h1-h2||load[d1]-load[d2]||d1-d2;});
+    let done=false;
+    for(const d of cand){
+      for(const iv of free[d]){
+        const s=Math.max(iv.start,tS),e=Math.min(iv.end,tE);
+        if(e-s>=a.dur){block(d,s,s+a.dur,a,'flex');done=true;break;}
+      }
+      if(done)break;
+    }
+    if(!done)warnings.push(`${a.name}: no free ${a.dur}-min slot`+(a.tod&&a.tod!=='any'?` in the ${a.tod}`:'')+' left');
+  }
+  return{placements,warnings};
+}
+
+// ---------- state ----------
+const DEF={
+  cfg:{dayStart:480,dayEnd:1320,days:[0,1,2,3,4,5,6]},
+  pins:[],
+  reminders:[
+    {id:'r1',name:'Take meds',day:0,time:'08:00',color:'#ffff00'},
+    {id:'r2',name:'Call mum',day:2,time:'18:00',color:'#39ff14'},
+  ],
+  acts:[
+    {id:'uni',name:'Uni lecture',color:'#e0567a',type:'fixed',day:0,start:'09:00',dur:120},
+    {id:'uni2',name:'Uni tutorial',color:'#e0567a',type:'fixed',day:2,start:'14:00',dur:90},
+    {id:'gym',name:'Workout',color:'#3ca35a',type:'flex',dur:60,count:3,freq:'weekly',tod:'morning'},
+    {id:'study',name:'Study',color:'#3b6ef5',type:'flex',dur:90,count:5,freq:'weekly',tod:'any'},
+    {id:'book',name:'Book writing',color:'#9a5cd0',type:'flex',dur:120,count:1,freq:'weekly',tod:'evening'},
+    {id:'paint',name:'Painting',color:'#d98a2b',type:'flex',dur:120,count:1,freq:'fortnight',week:'A',tod:'afternoon'},
+    {id:'hike',name:'Outdoor hike',color:'#2ba39a',type:'flex',dur:240,count:1,freq:'fortnight',week:'B',days:[5,6],tod:'morning'},
+  ]
+};
+let S=loadState();
+function loadState(){try{const s=JSON.parse(localStorage.timetable);s.pins=s.pins||[];s.reminders=s.reminders||[];return s;}catch(e){return structuredClone(DEF);}}
+function save(){localStorage.timetable=JSON.stringify(S);}
+
+// import shared link data before first render
+(function(){
+  const h=new URLSearchParams(location.hash.slice(1));
+  if(h.get('data')){
+    try{const s=JSON.parse(decodeURIComponent(escape(atob(h.get('data')))));
+      if(confirm('Load the schedule from this link? It replaces your current data.')){S=s;S.pins=S.pins||[];save();}
+    }catch(e){alert('That share link was invalid.');}
+    history.replaceState(null,'',location.pathname);
+  }
+})();
+
+// ---------- nav (bottom ribbon) ----------
+function setView(v){document.body.dataset.view=v;
+  document.querySelectorAll('.ribbon button').forEach(b=>b.setAttribute('aria-current',b.dataset.nav===v));}
+document.querySelectorAll('.ribbon button').forEach(b=>b.onclick=()=>setView(b.dataset.nav));
+
+// ---------- setup: day window ----------
+function renderCfg(){
+  $('cfgStart').value=hhmm(S.cfg.dayStart);$('cfgEnd').value=hhmm(S.cfg.dayEnd);
+  $('cfgDays').innerHTML='';
+  DAYS.forEach((d,i)=>{
+    const b=document.createElement('button');b.className='sec tiny';b.textContent=d;
+    b.style.flex='0 0 auto';b.style.opacity=S.cfg.days.includes(i)?1:.4;
+    b.onclick=()=>{const s=new Set(S.cfg.days);s.has(i)?s.delete(i):s.add(i);
+      S.cfg.days=[...s].sort((a,b)=>a-b);save();renderCfg();gen();};
+    $('cfgDays').append(b);
+  });
+}
+$('cfgStart').onchange=e=>{S.cfg.dayStart=mins(e.target.value);save();gen();};
+$('cfgEnd').onchange=e=>{S.cfg.dayEnd=mins(e.target.value);save();gen();};
+
+// ---------- setup: activities ----------
+function renderActs(){
+  const ul=$('actList');ul.innerHTML='';
+  S.acts.forEach(a=>{
+    const li=document.createElement('li');
+    const freq=a.type==='fixed'?`${DAYS[a.day]} ${a.start}`
+      :`${a.count}× ${a.dur}min · ${a.freq==='weekly'?'weekly':'fortnight '+(a.week||'A')}`;
+    li.innerHTML=`<span class="dot" style="background:${a.color}"></span>
+      <span class="grow"><b>${a.name}</b><span class="meta">${a.type==='fixed'?'Fixed · ':''}${freq}</span></span>`;
+    const ed=document.createElement('button');ed.className='sec tiny';ed.textContent='Edit';
+    ed.onclick=()=>openDlg(a);li.append(ed);ul.append(li);
+  });
+}
+
+// ---------- setup: reminders ----------
+let rColor=NEON[0];
+function renderSwatches(){
+  $('rSwatches').innerHTML=NEON.map(c=>`<button class="swatch" data-c="${c}" aria-current="${c===rColor}" style="background:${c}"></button>`).join('');
+  $('rSwatches').querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{rColor=b.dataset.c;renderSwatches();});
+}
+function renderReminders(){
+  $('rDay').innerHTML=DAYS.map((d,i)=>`<option value="${i}">${d}</option>`).join('');
+  const ul=$('remList');ul.innerHTML='';
+  (S.reminders||[]).slice().sort((a,b)=>a.day-b.day||a.time.localeCompare(b.time)).forEach(r=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="dot" style="background:${r.color}"></span>
+      <span class="grow"><b>${r.name}</b><span class="meta">${DAYS[r.day]} · ${r.time}</span></span>`;
+    const del=document.createElement('button');del.className='sec tiny';del.textContent='Delete';
+    del.onclick=()=>{S.reminders=S.reminders.filter(x=>x!==r);save();renderReminders();gen();};
+    li.append(del);ul.append(li);
+  });
+  renderSwatches();
+  scheduleTriggers();
+}
+$('rAdd').onclick=()=>{
+  const name=$('rName').value.trim(),time=$('rTime').value;
+  if(!name||!time){alert('Add a name and a time.');return;}
+  S.reminders.push({id:uid(),name,day:+$('rDay').value,time,color:rColor});
+  save();$('rName').value='';renderReminders();gen();
+};
+function openRemDlg(id){
+  const r=S.reminders.find(x=>x.id===id);if(!r)return;
+  $('remDlgTime').textContent=DAYS[r.day]+' · '+r.time;
+  $('remDlgBody').textContent=r.name;
+  $('remDlgBody').style.borderLeft='4px solid '+r.color;
+  $('remDlgDel').onclick=()=>{S.reminders=S.reminders.filter(x=>x!==r);save();renderReminders();gen();$('remDlg').close();};
+  $('remDlg').showModal();
+}
+$('remDlgClose').onclick=()=>$('remDlg').close();
+
+// ---------- activity dialog ----------
+let editing=null;
+function openDlg(a){
+  editing=a;$('dlgTitle').textContent=a?'Edit activity':'New activity';$('dlgDel').style.display=a?'':'none';
+  a=a||{name:'',color:'#3b6ef5',type:'flex',dur:60,count:1,freq:'weekly',tod:'any'};
+  $('fName').value=a.name;$('fColor').value=a.color;$('fType').value=a.type;
+  $('fDay').innerHTML=DAYS.map((d,i)=>`<option value="${i}">${d}</option>`).join('');
+  $('fDay').value=a.day??0;$('fStart').value=a.start||'09:00';$('fDur1').value=a.type==='fixed'?a.dur:60;
+  $('fLen').value=a.type==='flex'?a.dur:60;$('fCount').value=a.count||1;$('fFreq').value=a.freq||'weekly';
+  $('fWeek').value=a.week||'A';$('fTod').value=a.tod||'any';
+  $('fDaysAllow').innerHTML=DAYS.map((d,i)=>`<option value="${i}" ${a.days&&a.days.includes(i)?'selected':''}>${d}</option>`).join('');
+  syncDlg();$('dlg').showModal();
+}
+function syncDlg(){
+  const fixed=$('fType').value==='fixed';
+  $('fixedFields').classList.toggle('hide',!fixed);
+  $('flexFields').classList.toggle('hide',fixed);
+  $('fWeekRow').classList.toggle('hide',$('fFreq').value!=='fortnight');
+}
+$('fType').onchange=syncDlg;$('fFreq').onchange=syncDlg;
+$('addBtn').onclick=()=>openDlg(null);
+$('dlgCancel').onclick=()=>$('dlg').close();
+$('dlgDel').onclick=()=>{S.acts=S.acts.filter(x=>x!==editing);S.pins=S.pins.filter(p=>p.actId!==editing.id);
+  save();$('dlg').close();renderActs();gen();};
+$('dlgSave').onclick=()=>{
+  const fixed=$('fType').value==='fixed',a=editing||{id:uid()};
+  a.name=$('fName').value||'Untitled';a.color=$('fColor').value;a.type=$('fType').value;
+  if(fixed){a.day=+$('fDay').value;a.start=$('fStart').value;a.dur=+$('fDur1').value;
+    ['count','freq','tod','days','week'].forEach(k=>delete a[k]);
+  }else{a.dur=+$('fLen').value;a.count=+$('fCount').value;a.freq=$('fFreq').value;
+    a.tod=$('fTod').value;a.week=$('fWeek').value;
+    a.days=[...$('fDaysAllow').selectedOptions].map(o=>+o.value);delete a.day;delete a.start;}
+  if(!editing)S.acts.push(a);
+  save();$('dlg').close();renderActs();gen();
+};
+
+// ---------- month / week navigator ----------
+function renderWkNav(){
+  const sel=$('monthSel');
+  if(!sel.dataset.filled){ // fill 12 months (~52 weeks) starting from the viewed month
+    const base=new Date(curMon.getFullYear(),curMon.getMonth(),1);
+    sel.innerHTML='';
+    for(let i=0;i<12;i++){const d=new Date(base.getFullYear(),base.getMonth()+i,1);
+      sel.innerHTML+=`<option value="${monthKey(d)}">${MONTHS[d.getMonth()]} ${d.getFullYear()}</option>`;}
+    sel.dataset.filled=1;
+  }
+  sel.value=monthKey(curMon);
+  const[y,m]=sel.value.split('-').map(Number);
+  const weeks=weeksInMonth(y,m-1);
+  $('weekChips').innerHTML=weeks.map(w=>`<button class="sec tiny" data-mon="${isoDate(w)}" aria-current="${isoDate(w)===isoDate(curMon)}">${w.getDate()} ${MONTHS[w.getMonth()]}</button>`).join('');
+  $('weekChips').querySelectorAll('button').forEach(b=>b.onclick=()=>{const[Y,M,D]=b.dataset.mon.split('-').map(Number);curMon=new Date(Y,M-1,D);gen();});
+  const end=addDays(curMon,6);
+  $('wkLabel').textContent=`${curMon.getDate()} ${MONTHS[curMon.getMonth()]} – ${end.getDate()} ${MONTHS[end.getMonth()]} ${end.getFullYear()} · fortnight ${weekParity(curMon)}`;
+}
+$('monthSel').onchange=()=>{const[y,m]=$('monthSel').value.split('-').map(Number);curMon=weeksInMonth(y,m-1)[0]||curMon;gen();};
+$('mPrev').onclick=()=>{const s=$('monthSel');if(s.selectedIndex>0){s.selectedIndex--;s.onchange();}};
+$('mNext').onclick=()=>{const s=$('monthSel');if(s.selectedIndex<s.options.length-1){s.selectedIndex++;s.onchange();}};
+
+// ---------- calendar render ----------
+let curPlacements=[];
+let dayMode=matchMedia('(max-width:640px)').matches;
+let selDay=(new Date().getDay()+6)%7;
+function gen(){
+  const cfg=S.cfg,view={parity:weekParity(curMon),key:isoDate(curMon)};
+  renderWkNav();
+  $('topNow').textContent=isoDate(curMon)===isoDate(mondayOf(new Date()))?'this week':'';
+  const{placements,warnings}=schedule(cfg,S.acts,view,shuffleOrder,S.pins);
+  if(S.pins.some(p=>p._drop)){S.pins=S.pins.filter(p=>!p._drop);save();}
+  curPlacements=placements;
+  $('warns').innerHTML=warnings.map(w=>`<li>${w}</li>`).join('');
+  if(!cfg.days.includes(selDay))selDay=cfg.days[0];
+  const showDays=dayMode?[selDay]:cfg.days;
+  $('modeBtn').textContent=dayMode?'Week view':'Day view';
+  // day chips (mobile)
+  const chips=$('chips');chips.classList.toggle('hide',!dayMode);
+  chips.innerHTML=cfg.days.map(d=>`<button class="sec tiny" data-day="${d}" aria-current="${d===selDay}">${DAYS[d]}</button>`).join('');
+  chips.querySelectorAll('button').forEach(b=>b.onclick=()=>{selDay=+b.dataset.day;gen();});
+
+  const rows=Math.ceil((cfg.dayEnd-cfg.dayStart)/SLOT),height=rows*PX;
+  const cal=$('cal');cal.style.gridTemplateColumns=`48px repeat(${showDays.length},1fr)`;
+  cal.style.setProperty('--hshift',(cfg.dayStart%60?PX:0)+'px'); // align hour lines when day starts on the half hour
+  let html=`<div class="hd"></div>`+showDays.map(d=>`<div class="hd">${DAYS[d]}<span class="hdnum">${addDays(curMon,d).getDate()} ${MONTHS[addDays(curMon,d).getMonth()]}</span></div>`).join('');
+  html+=`<div class="timecol" style="height:${height}px">`;
+  for(let m=cfg.dayStart;m<=cfg.dayEnd;m+=60)
+    html+=`<div class="tlabel" style="top:${(m-cfg.dayStart)/SLOT*PX}px">${hhmm(m)}</div>`;
+  html+=`</div>`;
+  showDays.forEach(d=>{
+    html+=`<div class="daycol" data-day="${d}" style="height:${height}px">`;
+    placements.forEach((p,idx)=>{
+      if(p.day!==d)return;
+      const top=(p.start-cfg.dayStart)/SLOT*PX,h=(p.end-p.start)/SLOT*PX;
+      html+=`<div class="block" data-idx="${idx}" style="top:${top}px;height:${h}px;background:${p.act.color}">
+        ${p.kind==='pin'?'<span class="pin">📌</span>':''}${p.act.name}<small>${hhmm(p.start)}–${hhmm(p.end)}</small></div>`;
+    });
+    // reminders overlay — never scheduled, just laid over the slot in a right-hand gutter
+    const rem=(S.reminders||[]).filter(r=>r.day===d)
+      .map(r=>({r,start:mins(r.time),end:mins(r.time)+SLOT})).sort((a,b)=>a.start-b.start);
+    laneAssign(rem);
+    rem.forEach(it=>{
+      const t=Math.max(cfg.dayStart,Math.min(it.start,cfg.dayEnd-SLOT));
+      html+=`<div class="reminder" data-rid="${it.r.id}" title="Reminder — click to open"
+        style="top:${(t-cfg.dayStart)/SLOT*PX+2}px;right:${it.lane*23+3}px;background:${it.r.color}"></div>`;
+    });
+    html+=`</div>`;
+  });
+  cal.innerHTML=html;
+}
+let shuffleOrder=null;
+$('genBtn').onclick=()=>{shuffleOrder=null;gen();};
+$('modeBtn').onclick=()=>{dayMode=!dayMode;gen();};
+$('shuffleBtn').onclick=()=>{shuffleOrder={};S.acts.forEach(a=>shuffleOrder[a.id]=Math.random());gen();};
+// keep view sane across rotation / resize
+matchMedia('(max-width:640px)').addEventListener('change',e=>{dayMode=e.matches;gen();});
+
+// ---------- drag to adjust ----------
+let drag=null;
+const cal=$('cal');
+cal.addEventListener('pointerdown',e=>{const b=e.target.closest('.block');if(b)startDrag(e,+b.dataset.idx,b);});
+cal.addEventListener('click',e=>{const r=e.target.closest('.reminder');if(r)openRemDlg(r.dataset.rid);});
+cal.addEventListener('dblclick',e=>{
+  const b=e.target.closest('.block');if(!b)return;
+  const p=curPlacements[+b.dataset.idx];
+  if(p.kind==='pin'){S.pins=S.pins.filter(x=>x!==p.ref);save();gen();}
+  else openDlg(p.act);});
+function fitsAt(day,start,dur,idx){
+  const end=start+dur;
+  if(start<S.cfg.dayStart||end>S.cfg.dayEnd)return false;
+  return !curPlacements.some((q,i)=>i!==idx&&q.day===day&&start<q.end&&end>q.start);
+}
+function startDrag(e,idx,block){
+  const p=curPlacements[idx];e.preventDefault();
+  const r=block.getBoundingClientRect();
+  const ghost=block.cloneNode(true);
+  Object.assign(ghost.style,{position:'fixed',width:r.width+'px',height:r.height+'px',
+    left:r.left+'px',top:r.top+'px',opacity:.9,pointerEvents:'none',zIndex:999,margin:0});
+  document.body.append(ghost);block.style.opacity=.25;
+  drag={idx,p,dur:p.end-p.start,offY:e.clientY-r.top,ghost,tDay:p.day,tStart:p.start,valid:true};
+  block.setPointerCapture?.(e.pointerId);
+  window.addEventListener('pointermove',dragMove);
+  window.addEventListener('pointerup',dragUp,{once:true});
+}
+function dragMove(e){
+  const g=drag.ghost;g.style.left=(e.clientX-parseFloat(g.style.width)/2)+'px';g.style.top=(e.clientY-drag.offY)+'px';
+  const cols=[...document.querySelectorAll('.daycol')].map(c=>({day:+c.dataset.day,r:c.getBoundingClientRect()}));
+  let col=cols.find(c=>e.clientX>=c.r.left&&e.clientX<c.r.right);
+  if(!col)col=cols.reduce((a,b)=>Math.abs((b.r.left+b.r.right)/2-e.clientX)<Math.abs((a.r.left+a.r.right)/2-e.clientX)?b:a);
+  const slot=Math.round(((e.clientY-drag.offY)-col.r.top)/PX);
+  let start=S.cfg.dayStart+slot*SLOT;
+  start=Math.max(S.cfg.dayStart,Math.min(start,S.cfg.dayEnd-drag.dur));
+  drag.tDay=col.day;drag.tStart=start;drag.valid=fitsAt(col.day,start,drag.dur,drag.idx);
+  g.style.outline=drag.valid?'2px solid #fff':'2px dashed #ff5555';
+}
+function dragUp(){
+  window.removeEventListener('pointermove',dragMove);
+  drag.ghost.remove();
+  const{p,valid,tDay,tStart,dur}=drag;
+  const moved=valid&&(tDay!==p.day||tStart!==p.start);
+  drag=null;
+  if(moved){
+    if(p.kind==='fixed'){p.act.day=tDay;p.act.start=hhmm(tStart);renderActs();}
+    else if(p.kind==='pin'){p.ref.day=tDay;p.ref.start=tStart;}
+    else S.pins.push({id:uid(),actId:p.act.id,week:isoDate(curMon),day:tDay,start:tStart,dur});
+    save();
+  }
+  gen();
+}
+
+// ---------- sync & export ----------
+function dl(name,text,mime){const u=URL.createObjectURL(new Blob([text],{type:mime}));
+  const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
+$('expBtn').onclick=()=>dl('timetable-backup.json',JSON.stringify(S,null,2),'application/json');
+$('impBtn').onclick=()=>$('impFile').click();
+$('impFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+  rd.onload=()=>{try{S=JSON.parse(rd.result);S.pins=S.pins||[];save();renderCfg();renderActs();renderReminders();gen();
+    alert('Backup imported.');}catch(x){alert('Not a valid backup file.');}};rd.readAsText(f);};
+$('resetPinsBtn').onclick=()=>{S.pins=[];save();gen();};
+$('shareBtn').onclick=async()=>{
+  const link=location.href.split('#')[0]+'#data='+btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+  try{await navigator.clipboard.writeText(link);alert('Share link copied. Open it on another device to load this schedule.');}
+  catch(e){prompt('Copy this link:',link);}
+};
+// .ics — floating local time; recurring weekly (fortnightly = interval 2). ponytail: no TZ/DST handling.
+function nextMonday(){const t=new Date();t.setHours(0,0,0,0);const wd=(t.getDay()+6)%7;t.setDate(t.getDate()+((7-wd)%7));return t;}
+function icsStamp(mon,day,startMin,dur){
+  const s=new Date(mon);s.setDate(s.getDate()+day);s.setHours(startMin/60|0,startMin%60,0,0);
+  const e=new Date(s.getTime()+dur*60000);
+  const f=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')
+    +'T'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+'00';
+  return[f(s),f(e)];
+}
+$('icsBtn').onclick=()=>{
+  const cfg=S.cfg,mon=nextMonday(),mon7=new Date(mon.getTime()+7*864e5);
+  // recurring template only; per-week drag pins stay in-app
+  const A=schedule(cfg,S.acts,'A',null,[]),B=schedule(cfg,S.acts,'B',null,[]);
+  const ev=(p,anchor,interval)=>{
+    const[st,en]=icsStamp(anchor,p.day,p.start,p.end-p.start);
+    return['BEGIN:VEVENT','UID:'+uid()+'@timetable','DTSTAMP:'+st,'DTSTART:'+st,'DTEND:'+en,
+      'RRULE:FREQ=WEEKLY;INTERVAL='+interval,'SUMMARY:'+p.act.name.replace(/[,;\\]/g,' '),'END:VEVENT'].join('\r\n');
+  };
+  const out=[];
+  A.placements.forEach(p=>out.push(ev(p,mon,p.act.freq==='fortnight'?2:1)));
+  B.placements.forEach(p=>{if(p.act.type==='flex'&&p.act.freq==='fortnight')out.push(ev(p,mon7,2));});
+  (S.reminders||[]).forEach(r=>{const[st,en]=icsStamp(mon,r.day,mins(r.time),15);
+    out.push(['BEGIN:VEVENT','UID:'+uid()+'@timetable','DTSTAMP:'+st,'DTSTART:'+st,'DTEND:'+en,
+      'RRULE:FREQ=WEEKLY;INTERVAL=1','SUMMARY:⏰ '+r.name.replace(/[,;\\]/g,' '),
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+r.name.replace(/[,;\\]/g,' '),'TRIGGER:PT0M','END:VALARM','END:VEVENT'].join('\r\n'));});
+  dl('timetable.ics',['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//timetable//EN',...out,'END:VCALENDAR'].join('\r\n'),'text/calendar');
+};
+
+// ---------- notifications (foreground) ----------
+// ponytail: fires while the app is open. Background/closed + iOS need hosting, a service worker,
+// and (for push) a server — out of scope for a no-backend file.
+function dueReminders(now,reminders,fired){
+  const day=(now.getDay()+6)%7,hm=hhmm(now.getHours()*60+now.getMinutes()),k=isoDate(now);
+  return (reminders||[]).filter(r=>r.day===day&&r.time===hm&&!fired.has(k+r.id));
+}
+const notifFired=new Set();
+let swReg=null; // set once the service worker registers (only over http/https)
+function fireReminder(r){
+  const title='⏰ '+r.name,opts={body:DAYS[r.day]+' '+r.time,tag:'tt-'+r.id};
+  try{swReg?swReg.showNotification(title,opts):new Notification(title,opts);}catch(e){}
+}
+// Best-effort background reminders with NO server, where the browser supports Notification Triggers
+// (Chromium/Android). Silently no-ops on iOS/Firefox — foreground ticks still cover those. ponytail.
+async function scheduleTriggers(){
+  if(!swReg||!('TimestampTrigger'in window)||Notification.permission!=='granted')return;
+  try{
+    const pend=await swReg.getNotifications({includeTriggered:true});
+    pend.filter(n=>n.tag&&n.tag.startsWith('sch-')).forEach(n=>n.close());
+    const now=Date.now();
+    for(let d=0;d<14;d++){
+      const date=addDays(new Date(),d),wd=(date.getDay()+6)%7;
+      (S.reminders||[]).filter(r=>r.day===wd).forEach(r=>{
+        const[h,m]=r.time.split(':').map(Number),t=new Date(date);t.setHours(h,m,0,0);
+        if(t.getTime()>now+5000)
+          swReg.showNotification('⏰ '+r.name,{body:r.time,tag:'sch-'+r.id+'-'+isoDate(t),
+            showTrigger:new TimestampTrigger(t.getTime())});
+      });
+    }
+  }catch(e){}
+}
+function notifTick(){
+  if(!('Notification'in window)||Notification.permission!=='granted')return;
+  const now=new Date();
+  dueReminders(now,S.reminders,notifFired).forEach(r=>{notifFired.add(isoDate(now)+r.id);fireReminder(r);});
+}
+function updateNotifStatus(){
+  const p=('Notification'in window)?Notification.permission:'unsupported';
+  $('notifStatus').textContent={
+    granted:'On. Reminders alert while the app is open. Background/closed alerts (and iOS) need the app hosted online.',
+    default:'Not enabled yet — tap Enable.',
+    denied:'Blocked. Turn it back on in your browser/site settings.',
+    unsupported:'This browser doesn’t support notifications.'}[p];
+  $('notifBtn').textContent=p==='granted'?'Notifications enabled ✓':'Enable notifications';
+}
+$('notifBtn').onclick=async()=>{
+  if(!('Notification'in window)){alert('This browser has no notifications.');return;}
+  const p=await Notification.requestPermission();updateNotifStatus();
+  if(p==='granted'){fireReminder({name:'Notifications on',day:(new Date().getDay()+6)%7,time:hhmm(new Date().getHours()*60+new Date().getMinutes()),id:'welcome'});scheduleTriggers();}
+};
+$('notifTest').onclick=()=>{
+  if(Notification.permission!=='granted'){alert('Enable notifications first.');return;}
+  fireReminder({name:'Test reminder',day:(new Date().getDay()+6)%7,time:'now',id:'test'});
+};
+
+// ---------- phone QR ----------
+// ponytail: QR image via qrserver (needs internet at setup time; the app URL only, never the #data payload).
+function appURL(){return location.href.split('#')[0];}
+function renderQR(){
+  const url=($('qrUrl').value||'').trim()||appURL();
+  $('qrImg').src='https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data='+encodeURIComponent(url);
+  $('qrImg').alt=url;
+  $('qrWarn').classList.toggle('hide',!url.startsWith('file:'));
+}
+$('qrImg')&&($('qrImg').onerror=()=>{$('qrImg').alt='Could not draw QR (offline?). URL: '+$('qrImg').alt;});
+$('qrUrl').oninput=renderQR;
+$('qrUrl').value=appURL().startsWith('file:')?'':appURL();
+
+// ---------- installable PWA (Add to Home Screen) ----------
+const ICON='data:image/svg+xml,'+encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#3b6ef5"/><rect x="96" y="128" width="320" height="288" rx="28" fill="#fff"/><rect x="96" y="128" width="320" height="64" rx="28" fill="#1c1c1e"/><g fill="#3b6ef5"><rect x="140" y="224" width="64" height="48" rx="8"/><rect x="224" y="224" width="64" height="48" rx="8"/><rect x="308" y="224" width="64" height="48" rx="8"/><rect x="140" y="300" width="64" height="48" rx="8"/><rect x="224" y="300" width="64" height="48" rx="8"/></g></svg>`);
+(function(){
+  const m={name:'Weekly Timetable',short_name:'Timetable',display:'standalone',orientation:'any',
+    background_color:'#151517',theme_color:'#3b6ef5',start_url:'timetable.html',scope:'./',
+    icons:[{src:ICON,sizes:'any',type:'image/svg+xml',purpose:'any maskable'}]};
+  const l=document.createElement('link');l.rel='manifest';
+  l.href=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));
+  document.head.append(l);
+  const a=document.createElement('link');a.rel='apple-touch-icon';a.href=ICON;document.head.append(a);
+})();
+// register service worker when served over http(s) — enables install, offline, and Android notifications
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))
+  navigator.serviceWorker.register('sw.js').then(r=>{swReg=r;scheduleTriggers();}).catch(()=>{});
+
+// ---------- boot ----------
+renderCfg();renderActs();renderReminders();setView('schedule');gen();
+updateNotifStatus();renderQR();setInterval(notifTick,30000);
+
+// ---------- self-test: open timetable.html#test ----------
+function runTests(){
+  const cfg={dayStart:480,dayEnd:1320,days:[0,1,2,3,4]};
+  const acts=[
+    {id:'u',name:'Uni',type:'fixed',day:0,start:'09:00',dur:120},
+    {id:'g',name:'Gym',type:'flex',dur:60,count:3,freq:'weekly',tod:'any'},
+    {id:'p',name:'Paint',type:'flex',dur:90,count:1,freq:'fortnight',week:'B',tod:'any'},
+  ];
+  const A=schedule(cfg,acts,'A',null,[]),B=schedule(cfg,acts,'B',null,[]);
+  console.assert(A.placements.filter(p=>p.act.id==='g').length===3,'gym placed 3×');
+  console.assert(A.placements.some(p=>p.act.id==='u'&&p.start===540),'uni fixed at 09:00');
+  console.assert(A.placements.filter(p=>p.act.id==='p').length===0,'paint absent in week A');
+  console.assert(B.placements.filter(p=>p.act.id==='p').length===1,'paint present in week B');
+  // a pin replaces one auto gym session and is honoured
+  const pinned=schedule(cfg,acts,'A',null,[{actId:'g',week:'A',day:4,start:600,dur:60}]);
+  console.assert(pinned.placements.filter(p=>p.act.id==='g').length===3,'gym still totals 3 with a pin');
+  console.assert(pinned.placements.some(p=>p.act.id==='g'&&p.day===4&&p.start===600&&p.kind==='pin'),'pinned gym honoured');
+  for(const wk of[A,B,pinned]){
+    const byDay={};wk.placements.forEach(p=>(byDay[p.day]??=[]).push(p));
+    for(const d in byDay){const ps=byDay[d].sort((a,b)=>a.start-b.start);
+      for(let i=1;i<ps.length;i++)console.assert(ps[i].start>=ps[i-1].end,'no overlap on day '+d);}
+  }
+  // reminder lanes: overlapping share the gutter, non-overlapping reuse lane 0
+  console.assert(laneAssign([{start:0,end:30},{start:15,end:45}])===2,'overlapping reminders → 2 lanes');
+  console.assert(laneAssign([{start:0,end:30},{start:60,end:90}])===1,'disjoint reminders → 1 lane');
+  // week/date model
+  console.assert(weekParity(ANCHOR)==='A'&&weekParity(addDays(ANCHOR,7))==='B','fortnight parity alternates weekly');
+  console.assert(isoDate(new Date(2026,7,3))==='2026-08-03','isoDate format');
+  console.assert(mondayOf(new Date(2026,7,5)).getDay()===1,'mondayOf returns a Monday');
+  console.assert(weeksInMonth(2026,7).every(w=>w.getMonth()===7&&w.getDay()===1),'weeksInMonth → Mondays in Aug');
+  // notification due-matcher: right weekday+time, and dedupe once fired
+  const fired=new Set(),rems=[{id:'x',day:0,time:'09:30'},{id:'y',day:1,time:'09:30'}];
+  const monday930=new Date(2026,7,3,9,30); // 2026-08-03 is Monday
+  const due=dueReminders(monday930,rems,fired);
+  console.assert(due.length===1&&due[0].id==='x','due picks Monday 09:30 only');
+  fired.add(isoDate(monday930)+'x');
+  console.assert(dueReminders(monday930,rems,fired).length===0,'no re-fire after marked fired');
+  console.log('%cself-test complete — check for assertion failures above','color:green');
+}
+if(location.hash==='#test')runTests();
+</script>
+</body>
+</html>
