@@ -285,6 +285,8 @@ function laneAssign(items){
   }
   return ends.length;
 }
+// deterministic [0,1) hash: same shuffle seed always yields the same layout (stable across re-renders)
+const rand01=n=>{const x=Math.sin(n*12.9898)*43758.5453;return x-Math.floor(x);};
 
 // ---------- week model: real dates, ~52 weeks ahead ----------
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -340,24 +342,29 @@ function schedule(cfg,acts,week,order,pins){
   for(const a of acts.filter(x=>x.type==='flex')){
     if(a.freq==='fortnight'&&(a.week||'A')!==parity)continue;
     const already=wkPins.filter(p=>p.actId===a.id).length;
-    for(let i=0;i<Math.max(0,a.count-already);i++)sessions.push(a);
+    for(let i=0;i<Math.max(0,a.count-already);i++)sessions.push({a,i});
   }
-  sessions.sort((p,q)=>q.dur-p.dur||(order?order[p.id]-order[q.id]:0));
-  for(const a of sessions){
+  sessions.sort((p,q)=>q.a.dur-p.a.dur);          // longest first packs best
+  for(const{a,i} of sessions){
     const[tS,tE]=TOD[a.tod||'any'];
     const allow=(a.days&&a.days.length)?a.days.filter(d=>days.includes(d)):days;
-    const cand=[...allow].sort((d1,d2)=>{
-      const h1=dayActs[d1].has(a.id)?1:0,h2=dayActs[d2].has(a.id)?1:0;
-      return h1-h2||load[d1]-load[d2]||d1-d2;});
-    let done=false;
-    for(const d of cand){
-      for(const iv of free[d]){
-        const s=Math.max(iv.start,tS),e=Math.min(iv.end,tE);
-        if(e-s>=a.dur){block(d,s,s+a.dur,a,'flex');done=true;break;}
-      }
-      if(done)break;
+    // every grid-aligned start that fits INSIDE this activity's period, across its allowed days
+    const cands=[];
+    for(const d of allow)for(const iv of free[d]){
+      const lo=Math.max(iv.start,tS),hi=Math.min(iv.end,tE)-a.dur;
+      for(let s=lo;s<=hi;s+=SLOT)cands.push({d,s});
     }
-    if(!done)warnings.push(`${a.name}: no free ${a.dur}-min slot`+(a.tod&&a.tod!=='any'?` in the ${a.tod}`:'')+' left');
+    if(!cands.length){warnings.push(`${a.name}: no free ${a.dur}-min slot`+(a.tod&&a.tod!=='any'?` in the ${a.tod}`:'')+' left');continue;}
+    // spread sessions of the same activity onto different days where possible
+    const fresh=cands.filter(c=>!dayActs[c.d].has(a.id)),pool=fresh.length?fresh:cands;
+    let pick;
+    if(order){                                    // Shuffle: pick a slot pseudo-randomly within the period
+      const r=rand01((order[a.id]||0)*7919+i*131.7+a.dur*0.13);
+      pick=pool[Math.floor(r*pool.length)%pool.length];
+    }else{                                        // default: least-loaded day, earliest slot
+      pick=[...pool].sort((x,y)=>load[x.d]-load[y.d]||x.d-y.d||x.s-y.s)[0];
+    }
+    block(pick.d,pick.s,pick.s+a.dur,a,'flex');
   }
   return{placements,warnings};
 }
@@ -816,6 +823,15 @@ function runTests(){
   console.assert(due.length===1&&due[0].id==='x','due picks Monday 09:30 only');
   fired.add(isoDate(monday930)+'x');
   console.assert(dueReminders(monday930,rems,fired).length===0,'no re-fire after marked fired');
+  // shuffle: varied placements, and always inside the chosen period
+  const anyAct=[{id:'a',name:'A',type:'flex',dur:60,count:1,freq:'weekly',tod:'any'}];
+  const spots=new Set();
+  for(let k=0;k<20;k++){const p=schedule(cfg,anyAct,{parity:'A',key:'k'},{a:k*0.111},[]).placements
+    .find(x=>x.act.id==='a');spots.add(p.day+'@'+p.start);}
+  console.assert(spots.size>1,'shuffle yields varied placements');
+  const morn=schedule(cfg,[{id:'m',name:'M',type:'flex',dur:60,count:1,freq:'weekly',tod:'morning'}],
+    {parity:'A',key:'k'},{m:0.42},[]).placements.find(x=>x.act.id==='m');
+  console.assert(morn.start>=0&&morn.end<=720,'shuffled morning activity stays before noon');
   console.log('%cself-test complete — check for assertion failures above','color:green');
 }
 if(location.hash==='#test')runTests();
