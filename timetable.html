@@ -50,6 +50,8 @@
   .wknav select{flex:1;font-weight:600}
   .wknav .tiny{flex:0 0 auto;font-size:16px;line-height:1;padding:6px 12px}
   .wklabel{font-size:12.5px;color:var(--muted);margin:0 0 10px;font-weight:600}
+  .labelrow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  .labelrow .wklabel{margin:0}
   .hdnum{display:block;font-size:10px;font-weight:500;color:var(--muted);margin-top:1px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;
     box-shadow:0 1px 3px rgba(0,0,0,.05)}
@@ -124,16 +126,18 @@
       <button id="mNext" class="sec tiny" aria-label="Next month">›</button>
     </div>
     <div id="weekChips" class="chips"></div>
-    <div id="wkLabel" class="wklabel"></div>
-    <div class="toolbar">
-      <button id="genBtn">Generate</button>
-      <button id="shuffleBtn" class="sec">Shuffle</button>
-      <button id="modeBtn" class="sec">Day view</button>
+    <div class="labelrow">
+      <div id="wkLabel" class="wklabel"></div>
+      <button id="modeBtn" class="sec tiny">Day view</button>
     </div>
-    <p class="hint">Drag a block to move it into any free slot. Double-click a 📌 pinned block to release it.</p>
     <div id="chips" class="chips hide"></div>
     <ul id="warns" class="warns"></ul>
     <div id="cal" class="cal"></div>
+    <div class="toolbar" style="margin-top:12px">
+      <button id="genBtn">Generate</button>
+      <button id="shuffleBtn" class="sec">Shuffle</button>
+    </div>
+    <p class="hint">Drag a block to move it into any free slot. Double-click a 📌 pinned block to release it.</p>
   </section>
 
   <!-- ============ ACTIVITIES ============ -->
@@ -186,10 +190,7 @@
     <div class="panel">
       <h2>Notifications</h2>
       <p class="hint">Alert you when a reminder falls due.</p>
-      <div class="row">
-        <button id="notifBtn">Enable notifications</button>
-        <button id="notifTest" class="sec">Test</button>
-      </div>
+      <button id="notifBtn" style="width:100%">Enable notifications</button>
       <p id="notifStatus" class="hint" style="margin-top:8px"></p>
     </div>
 
@@ -363,6 +364,7 @@ function schedule(cfg,acts,week,order,pins){
 // ---------- state ----------
 const DEF={
   cfg:{dayStart:480,dayEnd:1320,days:[0,1,2,3,4,5,6]},
+  notif:false,
   pins:[],
   reminders:[
     {id:'r1',name:'Take meds',day:0,time:'08:00',color:'#ffff00'},
@@ -687,8 +689,13 @@ function fireReminder(r){
 }
 // Best-effort background reminders with NO server, where the browser supports Notification Triggers
 // (Chromium/Android). Silently no-ops on iOS/Firefox — foreground ticks still cover those. ponytail.
+async function cancelTriggers(){
+  if(!swReg)return;
+  try{const p=await swReg.getNotifications({includeTriggered:true});
+    p.filter(n=>n.tag&&n.tag.startsWith('sch-')).forEach(n=>n.close());}catch(e){}
+}
 async function scheduleTriggers(){
-  if(!swReg||!('TimestampTrigger'in window)||Notification.permission!=='granted')return;
+  if(!S.notif||!swReg||!('TimestampTrigger'in window)||Notification.permission!=='granted')return;
   try{
     const pend=await swReg.getNotifications({includeTriggered:true});
     pend.filter(n=>n.tag&&n.tag.startsWith('sch-')).forEach(n=>n.close());
@@ -705,27 +712,29 @@ async function scheduleTriggers(){
   }catch(e){}
 }
 function notifTick(){
-  if(!('Notification'in window)||Notification.permission!=='granted')return;
+  if(!S.notif||!('Notification'in window)||Notification.permission!=='granted')return;
   const now=new Date();
   dueReminders(now,S.reminders,notifFired).forEach(r=>{notifFired.add(isoDate(now)+r.id);fireReminder(r);});
 }
 function updateNotifStatus(){
-  const p=('Notification'in window)?Notification.permission:'unsupported';
-  $('notifStatus').textContent={
-    granted:'On. Reminders alert while the app is open. Background/closed alerts (and iOS) need the app hosted online.',
-    default:'Not enabled yet — tap Enable.',
-    denied:'Blocked. Turn it back on in your browser/site settings.',
-    unsupported:'This browser doesn’t support notifications.'}[p];
-  $('notifBtn').textContent=p==='granted'?'Notifications enabled ✓':'Enable notifications';
+  const has='Notification'in window,perm=has?Notification.permission:'unsupported';
+  const on=has&&perm==='granted'&&!!S.notif;
+  $('notifBtn').textContent=on?'Disable notifications':'Enable notifications';
+  $('notifStatus').textContent=
+    !has?'This browser doesn’t support notifications.'
+    :perm==='denied'?'Blocked in your browser/site settings — allow notifications there first.'
+    :on?'On. Reminders alert while the app is open (Android also in the background where supported).'
+    :'Off. Tap Enable to get reminder alerts.';
 }
 $('notifBtn').onclick=async()=>{
   if(!('Notification'in window)){alert('This browser has no notifications.');return;}
-  const p=await Notification.requestPermission();updateNotifStatus();
-  if(p==='granted'){fireReminder({name:'Notifications on',day:(new Date().getDay()+6)%7,time:hhmm(new Date().getHours()*60+new Date().getMinutes()),id:'welcome'});scheduleTriggers();}
-};
-$('notifTest').onclick=()=>{
-  if(Notification.permission!=='granted'){alert('Enable notifications first.');return;}
-  fireReminder({name:'Test reminder',day:(new Date().getDay()+6)%7,time:'now',id:'test'});
+  if(S.notif){S.notif=false;save();cancelTriggers();updateNotifStatus();return;}
+  let perm=Notification.permission;
+  if(perm!=='granted')perm=await Notification.requestPermission();
+  if(perm==='granted'){S.notif=true;save();
+    fireReminder({name:'Notifications on',day:(new Date().getDay()+6)%7,time:hhmm(new Date().getHours()*60+new Date().getMinutes()),id:'welcome'});
+    scheduleTriggers();}
+  updateNotifStatus();
 };
 
 // ---------- phone QR ----------
