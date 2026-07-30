@@ -392,16 +392,21 @@ let S=loadState();
 function loadState(){try{const s=JSON.parse(localStorage.timetable);s.pins=s.pins||[];s.reminders=s.reminders||[];return s;}catch(e){return structuredClone(DEF);}}
 function save(){localStorage.timetable=JSON.stringify(S);renderQR();} // QR carries the schedule, so refresh it on every change
 
-// import shared link data before first render
-(function(){
+// Import shared-link / QR data — on first load AND whenever #data changes (re-scanning while open,
+// which is only a hash change and would otherwise not reload the page).
+function importFromHash(rerender){
   const h=new URLSearchParams(location.hash.slice(1));
-  if(h.get('data')){
-    try{const s=JSON.parse(decodeURIComponent(escape(atob(h.get('data')))));
-      if(confirm('Load the schedule from this link? It replaces your current data.')){S=s;S.pins=S.pins||[];save();}
-    }catch(e){alert('That share link was invalid.');}
-    history.replaceState(null,'',location.pathname);
-  }
-})();
+  if(!h.get('data'))return;
+  try{const s=JSON.parse(decodeURIComponent(escape(atob(h.get('data')))));
+    if(confirm('Load the schedule from this link? It replaces your current data.')){
+      S=s;S.pins=S.pins||[];S.reminders=S.reminders||[];save();
+      if(rerender){renderCfg();renderActs();renderReminders();gen();}
+    }
+  }catch(e){alert('That share link was invalid.');}
+  history.replaceState(null,'',location.pathname);
+}
+importFromHash(false);
+window.addEventListener('hashchange',()=>importFromHash(true));
 
 // ---------- nav (bottom ribbon) ----------
 function setView(v){document.body.dataset.view=v;
@@ -779,8 +784,11 @@ const ICON='data:image/svg+xml,'+encodeURIComponent(
   const a=document.createElement('link');a.rel='apple-touch-icon';a.href=ICON;document.head.append(a);
 })();
 // register service worker when served over http(s) — enables install, offline, and Android notifications
-if('serviceWorker'in navigator&&location.protocol.startsWith('http'))
-  navigator.serviceWorker.register('sw.js').then(r=>{swReg=r;scheduleTriggers();}).catch(()=>{});
+if('serviceWorker'in navigator&&location.protocol.startsWith('http')){
+  let reloaded=false; // reload once when a newer service worker takes over, so updates apply on this visit
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!reloaded){reloaded=true;location.reload();}});
+  navigator.serviceWorker.register('sw.js').then(r=>{swReg=r;r.update&&r.update();scheduleTriggers();}).catch(()=>{});
+}
 
 // ---------- boot ----------
 renderCfg();renderActs();renderReminders();setView('schedule');gen();
