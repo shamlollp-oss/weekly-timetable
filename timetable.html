@@ -64,6 +64,7 @@
   button.sec{background:var(--bg);color:var(--text);border:1px solid var(--line);font-weight:500}
   button.tiny{padding:3px 8px;font-size:12px}
   button:hover{filter:brightness(1.05)}button:active{transform:translateY(1px)}
+  button:disabled{opacity:.45;cursor:not-allowed;filter:none;transform:none}
   .acts{list-style:none;margin:0;padding:0}
   .acts li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
   .dot{width:12px;height:12px;border-radius:3px;flex:0 0 12px}
@@ -231,6 +232,7 @@
       <div><label>Start</label><input id="fStart" type="time" step="900"></div>
       <div><label>Duration (min)</label><input id="fDur1" type="number" min="15" step="15" value="60"></div>
     </div>
+    <p id="fClash" class="hint hide" style="color:var(--warn);margin-top:8px"></p>
   </div>
   <div id="flexFields">
     <div class="row">
@@ -496,14 +498,31 @@ function syncDlg(){
   $('fixedFields').classList.toggle('hide',!fixed);
   $('flexFields').classList.toggle('hide',fixed);
   $('fWeekRow').classList.toggle('hide',$('fFreq').value!=='fortnight');
+  validateFixed();
+}
+// Reason a fixed slot can't be placed: outside the day window, or overlapping another fixed activity. '' = ok.
+function fixedClashMsg(){
+  if($('fType').value!=='fixed')return'';
+  if(!$('fStart').value||!(+$('fDur1').value>0))return'';
+  const day=+$('fDay').value,s=mins($('fStart').value),e=s+ +$('fDur1').value;
+  if(s<S.cfg.dayStart||e>S.cfg.dayEnd)return`Outside your day window (${hhmm(S.cfg.dayStart)}–${hhmm(S.cfg.dayEnd)}).`;
+  const c=S.acts.find(x=>x.type==='fixed'&&x!==editing&&x.day===day&&s<mins(x.start)+x.dur&&e>mins(x.start));
+  return c?`Clashes with “${c.name}” (${DAYS[day]} ${c.start}–${hhmm(mins(c.start)+c.dur)}).`:'';
+}
+function validateFixed(){
+  const msg=fixedClashMsg();
+  $('fClash').textContent=msg;$('fClash').classList.toggle('hide',!msg);
+  $('dlgSave').disabled=!!msg;
 }
 $('fType').onchange=syncDlg;$('fFreq').onchange=syncDlg;
+$('fDay').onchange=validateFixed;$('fStart').oninput=validateFixed;$('fDur1').oninput=validateFixed;
 $('addBtn').onclick=()=>openDlg(null);
 $('dlgCancel').onclick=()=>$('dlg').close();
 $('dlgDel').onclick=()=>{S.acts=S.acts.filter(x=>x!==editing);S.pins=S.pins.filter(p=>p.actId!==editing.id);
   save();$('dlg').close();renderActs();gen();};
 $('dlgSave').onclick=()=>{
   const fixed=$('fType').value==='fixed',a=editing||{id:uid()};
+  if(fixed&&fixedClashMsg()){validateFixed();return;}   // never commit a clashing/out-of-range fixed slot
   a.name=$('fName').value||'Untitled';a.color=$('fColor').value;a.type=$('fType').value;
   if(fixed){a.day=+$('fDay').value;a.start=$('fStart').value;a.dur=+$('fDur1').value;
     ['count','freq','tod','days','week'].forEach(k=>delete a[k]);
