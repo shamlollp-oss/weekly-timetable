@@ -134,8 +134,7 @@
     <ul id="warns" class="warns"></ul>
     <div id="cal" class="cal"></div>
     <div class="toolbar" style="margin-top:12px">
-      <button id="genBtn">Generate</button>
-      <button id="shuffleBtn" class="sec">Shuffle</button>
+      <button id="shuffleBtn" class="sec">Shuffle layout</button>
     </div>
     <p class="hint">Drag a block to move it into any free slot. Double-click a 📌 pinned block to release it.</p>
   </section>
@@ -575,7 +574,6 @@ function gen(){
   cal.innerHTML=html;
 }
 let shuffleOrder=null;
-$('genBtn').onclick=()=>{shuffleOrder=null;gen();};
 $('modeBtn').onclick=()=>{dayMode=!dayMode;gen();};
 $('shuffleBtn').onclick=()=>{shuffleOrder={};S.acts.forEach(a=>shuffleOrder[a.id]=Math.random());gen();};
 // keep view sane across rotation / resize
