@@ -106,7 +106,7 @@
   .hide{display:none!important}
   input[type=color]{height:36px;padding:2px}
   code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
-  #qrImg{border-radius:8px;background:#fff;padding:6px;max-width:100%}
+  #qrImg{border-radius:8px;background:#fff;padding:8px;max-width:100%;height:auto;display:inline-block}
   @media print{.topbar,.toolbar,.chips,.hint,.ribbon,.wknav{display:none}main{overflow:visible}}
 </style>
 </head>
@@ -179,8 +179,9 @@
 
     <div class="panel">
       <h2>Get it on your phone</h2>
-      <p class="hint">Scan on Android or iOS to open the app, then use the browser's <b>Add to Home Screen</b> to install it.</p>
-      <div style="text-align:center;margin:6px 0 4px"><img id="qrImg" width="220" height="220" alt=""></div>
+      <p class="hint">Scan to open the app on your phone <b>with your current schedule loaded</b>, then use <b>Add to Home Screen</b> to install it. The code updates automatically whenever you make a change.</p>
+      <div style="text-align:center;margin:6px 0 4px"><img id="qrImg" alt=""></div>
+      <p id="qrBig" class="hint hide" style="color:var(--warn)">Schedule is too large to fit in a QR — use “Copy share link” below instead.</p>
       <label>App URL (the address your phone opens)</label>
       <input id="qrUrl" placeholder="https://…">
       <p id="qrWarn" class="hint hide" style="color:var(--warn)">This is a <b>file://</b> path — a phone can't open it. Serve the app (below), then paste that address here.</p>
@@ -265,6 +266,7 @@
   </div>
 </dialog>
 
+<script src="qrcode.min.js"></script>
 <script>
 const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const TOD={any:[0,1440],morning:[0,720],afternoon:[720,1020],evening:[1020,1440]};
@@ -382,7 +384,7 @@ const DEF={
 };
 let S=loadState();
 function loadState(){try{const s=JSON.parse(localStorage.timetable);s.pins=s.pins||[];s.reminders=s.reminders||[];return s;}catch(e){return structuredClone(DEF);}}
-function save(){localStorage.timetable=JSON.stringify(S);}
+function save(){localStorage.timetable=JSON.stringify(S);renderQR();} // QR carries the schedule, so refresh it on every change
 
 // import shared link data before first render
 (function(){
@@ -738,15 +740,24 @@ $('notifBtn').onclick=async()=>{
 };
 
 // ---------- phone QR ----------
-// ponytail: QR image via qrserver (needs internet at setup time; the app URL only, never the #data payload).
+// Generated locally (no third party) so the schedule in the code never leaves the device.
+// Encodes the hosted URL + a #data= payload, so scanning opens the app with the current schedule.
 function appURL(){return location.href.split('#')[0];}
 function renderQR(){
-  const url=($('qrUrl').value||'').trim()||appURL();
-  $('qrImg').src='https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data='+encodeURIComponent(url);
-  $('qrImg').alt=url;
-  $('qrWarn').classList.toggle('hide',!url.startsWith('file:'));
+  const img=$('qrImg');if(!img||typeof qrcode!=='function')return;
+  const base=(($('qrUrl').value||'').trim()||appURL()).split('#')[0];
+  $('qrWarn').classList.toggle('hide',!base.startsWith('file:'));
+  const link=base+'#data='+btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+  try{
+    const qr=qrcode(0,'L');qr.addData(link);qr.make();
+    const cs=Math.max(2,Math.floor(240/(qr.getModuleCount()+8)));
+    img.src=qr.createDataURL(cs,cs*2);img.alt='QR to open '+base;
+    $('qrBig').classList.add('hide');
+  }catch(e){                                   // data beyond QR capacity
+    img.removeAttribute('src');img.alt='';
+    $('qrBig').classList.remove('hide');
+  }
 }
-$('qrImg')&&($('qrImg').onerror=()=>{$('qrImg').alt='Could not draw QR (offline?). URL: '+$('qrImg').alt;});
 $('qrUrl').oninput=renderQR;
 $('qrUrl').value=appURL().startsWith('file:')?'':appURL();
 

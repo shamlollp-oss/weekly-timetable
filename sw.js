@@ -1,7 +1,7 @@
 // Service worker: offline app shell + notification click handling.
 // ponytail: cache-first for same-origin GETs, network fallback. One cache, bump CACHE to invalidate.
-const CACHE='tt-v1';
-const ASSETS=['timetable.html'];
+const CACHE='tt-v2';
+const ASSETS=['timetable.html','qrcode.min.js'];
 
 self.addEventListener('install',e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));
