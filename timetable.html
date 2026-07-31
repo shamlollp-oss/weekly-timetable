@@ -316,9 +316,12 @@
     <select id="fFreq"><option value="weekly">Every week</option><option value="fortnight">Fortnightly</option></select>
     <div id="fWeekRow" class="hide"><label>Which week</label>
       <select id="fWeek"><option value="A">A</option><option value="B">B</option></select></div>
-    <label>Preferred time of day</label>
-    <select id="fTod"><option value="any">Any</option><option value="morning">Morning</option>
-      <option value="afternoon">Afternoon</option><option value="evening">Evening</option></select>
+    <label>Preferred time of day (pick any; none = anytime)</label>
+    <div id="fTodBox" class="chips" style="flex-wrap:wrap;overflow:visible"></div>
+    <div id="fTodCustom" class="row hide" style="margin-top:6px">
+      <div><label>From</label><input id="fTodFrom" type="time" step="900"></div>
+      <div><label>To</label><input id="fTodTo" type="time" step="900"></div>
+    </div>
     <label>Restrict to days (optional, ctrl/⌘-click)</label>
     <select id="fDaysAllow" multiple size="4" style="height:auto"></select>
   </div>
@@ -347,11 +350,37 @@
   </div>
 </dialog>
 
+<!-- edit one placed block's time -->
+<dialog id="blkDlg">
+  <h1 style="font-size:16px;margin-bottom:2px">Edit block</h1>
+  <p id="blkName" class="meta" style="margin:0 0 12px"></p>
+  <div class="row">
+    <div><label>Start</label><input id="blkStart" type="time" step="900"></div>
+    <div><label>End</label><input id="blkEnd" type="time" step="900"></div>
+  </div>
+  <p id="blkWarn" class="hint hide" style="color:var(--warn);margin-top:8px"></p>
+  <div class="row" style="margin-top:14px">
+    <button id="blkSave">Save</button>
+    <button id="blkEditAct" class="sec">Edit activity…</button>
+    <button id="blkCancel" class="sec">Cancel</button>
+  </div>
+</dialog>
+
 <script src="qrcode.min.js"></script>
 <script src="content.js"></script>
 <script>
 const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-const TOD={any:[0,1440],morning:[0,720],afternoon:[720,1020],evening:[1020,1440]};
+const TOD={morning:[0,720],afternoon:[720,1020],evening:[1020,1260],night:[1260,1440]};
+const TOD_KEYS=['morning','afternoon','evening','night'];
+// resolve an activity's time-of-day preference to a list of [start,end] windows.
+// tod can be 'any', a legacy single key string, an array of keys (union), or {start,end} custom.
+function todWindows(tod){
+  if(!tod||tod==='any')return[[0,1440]];
+  if(typeof tod==='string')return TOD[tod]?[TOD[tod]]:[[0,1440]];
+  if(Array.isArray(tod))return tod.length?tod.map(k=>TOD[k]).filter(Boolean):[[0,1440]];
+  if(tod.start!=null)return[[tod.start,tod.end]];
+  return[[0,1440]];
+}
 const SLOT=30,PX=24;
 const mins=s=>{const[a,b]=s.split(':').map(Number);return a*60+b;};
 const hhmm=m=>String(m/60|0).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
@@ -395,15 +424,17 @@ function carve(free,s,e){
   }
   return out;
 }
-function schedule(cfg,acts,week,order,pins){
-  const parity=typeof week==='object'?week.parity:week;  // fortnight phase A/B
-  const key=typeof week==='object'?week.key:week;         // per-week pin bucket (a Monday's date)
+// layout: optional per-week memory {sessionKey:{day,start,dur,manual}}. When present, each flexible
+// session is kept at its remembered spot, so moving ONE block never reshuffles the others.
+function schedule(cfg,acts,week,order,layout){
+  const parity=typeof week==='object'?week.parity:week;   // fortnight phase A/B
   const days=cfg.days,free={},load={},dayActs={};
   days.forEach(d=>{free[d]=[{start:cfg.dayStart,end:cfg.dayEnd}];load[d]=0;dayActs[d]=new Set();});
-  const placements=[],warnings=[];
-  const block=(day,s,e,act,kind,ref)=>{free[day]=carve(free[day],s,e);
-    placements.push({day,start:s,end:e,act,kind,ref});dayActs[day].add(act.id);load[day]+=e-s;};
-  const fits=(day,s,e)=>free[day].some(iv=>s>=iv.start&&e<=iv.end);
+  const placements=[],warnings=[];let changed=false;
+  const block=(day,s,e,act,kind,key)=>{free[day]=carve(free[day],s,e);
+    placements.push({day,start:s,end:e,act,kind,key});dayActs[day].add(act.id);load[day]+=e-s;};
+  const fits=(day,s,e)=>days.includes(day)&&free[day].some(iv=>s>=iv.start&&e<=iv.end);
+  const posOk=(day,s,e)=>days.includes(day)&&s>=cfg.dayStart&&e<=cfg.dayEnd&&fits(day,s,e);
 
   for(const a of acts.filter(x=>x.type==='fixed')){
     if(!days.includes(a.day)){warnings.push(`${a.name}: its day isn't active`);continue;}
@@ -411,53 +442,46 @@ function schedule(cfg,acts,week,order,pins){
     if(!fits(a.day,s,e)){warnings.push(`${a.name}: fixed slot is out of range or clashes`);continue;}
     block(a.day,s,e,a,'fixed');
   }
-  // pinned (drag-adjusted) sessions for this week, placed like fixed
-  const wkPins=(pins||[]).filter(p=>p.week===key);
-  for(const p of wkPins){
-    const a=acts.find(x=>x.id===p.actId);if(!a)continue;
-    const s=p.start,e=s+p.dur;
-    if(!days.includes(p.day)||!fits(p.day,s,e)){warnings.push(`${a.name}: pinned slot no longer fits — released`);
-      p._drop=true;continue;}
-    block(p.day,s,e,a,'pin',p);
-  }
-  // flexible sessions, minus what's already pinned
+  // flexible sessions for this week
   let sessions=[];
   for(const a of acts.filter(x=>x.type==='flex')){
     if(a.freq==='fortnight'&&(a.week||'A')!==parity)continue;
-    const already=wkPins.filter(p=>p.actId===a.id).length;
-    for(let i=0;i<Math.max(0,a.count-already);i++)sessions.push({a,i});
+    for(let i=0;i<Math.max(1,a.count||1);i++)sessions.push({a,key:a.id+'#'+i,idx:i});
   }
-  sessions.sort((p,q)=>q.a.dur-p.a.dur);          // longest first packs best
-  for(const{a,i} of sessions){
-    const[tS,tE]=TOD[a.tod||'any'];
+  // pass 1: keep sessions with a still-valid remembered position (reserve those spots first)
+  const toPlace=[];
+  for(const sn of sessions){
+    const mem=layout&&layout[sn.key];sn.dur=(mem&&mem.dur)||sn.a.dur;
+    if(mem&&posOk(mem.day,mem.start,mem.start+sn.dur))
+      block(mem.day,mem.start,mem.start+sn.dur,sn.a,mem.manual?'manual':'flex',sn.key);
+    else toPlace.push(sn);
+  }
+  // pass 2: auto-place the rest into free space within their time-of-day windows
+  toPlace.sort((p,q)=>q.dur-p.dur);               // longest first packs best
+  for(const sn of toPlace){
+    const a=sn.a,wins=todWindows(a.tod);
     const allow=(a.days&&a.days.length)?a.days.filter(d=>days.includes(d)):days;
-    // every grid-aligned start that fits INSIDE this activity's period, across its allowed days
     const cands=[];
-    for(const d of allow)for(const iv of free[d]){
-      const lo=Math.max(iv.start,tS),hi=Math.min(iv.end,tE)-a.dur;
+    for(const d of allow)for(const iv of free[d])for(const[tS,tE] of wins){
+      const lo=Math.max(iv.start,tS),hi=Math.min(iv.end,tE)-sn.dur;
       for(let s=lo;s<=hi;s+=SLOT)cands.push({d,s});
     }
-    if(!cands.length){warnings.push(`${a.name}: no free ${a.dur}-min slot`+(a.tod&&a.tod!=='any'?` in the ${a.tod}`:'')+' left');continue;}
-    // spread sessions of the same activity onto different days where possible
+    if(!cands.length){warnings.push(`${a.name}: no free ${sn.dur}-min slot left`);continue;}
     const fresh=cands.filter(c=>!dayActs[c.d].has(a.id)),pool=fresh.length?fresh:cands;
     let pick;
-    if(order){                                    // Shuffle: pick a slot pseudo-randomly within the period
-      const r=rand01((order[a.id]||0)*7919+i*131.7+a.dur*0.13);
-      pick=pool[Math.floor(r*pool.length)%pool.length];
-    }else{                                        // default: least-loaded day, earliest slot
-      pick=[...pool].sort((x,y)=>load[x.d]-load[y.d]||x.d-y.d||x.s-y.s)[0];
-    }
-    block(pick.d,pick.s,pick.s+a.dur,a,'flex');
+    if(order){const r=rand01((order[a.id]||0)*7919+sn.idx*131.7+sn.dur*0.13);pick=pool[Math.floor(r*pool.length)%pool.length];}
+    else pick=[...pool].sort((x,y)=>load[x.d]-load[y.d]||x.d-y.d||x.s-y.s)[0];
+    block(pick.d,pick.s,pick.s+sn.dur,a,'flex',sn.key);
+    if(layout){layout[sn.key]={day:pick.d,start:pick.s,dur:sn.dur};changed=true;}   // remember for next time
   }
-  return{placements,warnings};
+  return{placements,warnings,changed};
 }
 
 // ---------- state ----------
 const DEF={
   cfg:{dayStart:480,dayEnd:1320,days:[0,1,2,3,4,5,6]},
-  notif:false,
+  notif:false,version:2,layout:{},
   learn:{cats:LEARN_CATEGORIES.map(c=>c.id),word:{date:'',id:null,used:[],history:[]},fact:{date:'',id:null,used:[]},topic:{date:'',id:null,used:[]}},
-  pins:[],
   reminders:[
     {id:'r1',name:'Take meds',day:0,time:'08:00',color:'#ffff00'},
     {id:'r2',name:'Call mum',day:2,time:'18:00',color:'#39ff14'},
@@ -476,7 +500,22 @@ let S=loadState();
 function normLearn(l){l=l||{};l.cats=l.cats||LEARN_CATEGORIES.map(c=>c.id);
   for(const k of['word','fact','topic']){l[k]=l[k]||{};l[k].used=l[k].used||[];if(!('id'in l[k]))l[k].id=null;l[k].date=l[k].date||'';}
   l.word.history=l.word.history||[];return l;}
-function loadState(){try{const s=JSON.parse(localStorage.timetable);s.pins=s.pins||[];s.reminders=s.reminders||[];s.learn=normLearn(s.learn);return s;}catch(e){return structuredClone(DEF);}}
+// Defensive load so activities/reminders survive across app updates and schema changes.
+// localStorage is per-origin and is NOT cleared when the app (or its service worker) updates.
+function loadState(){
+  try{
+    const s=JSON.parse(localStorage.timetable);
+    s.cfg=s.cfg&&typeof s.cfg==='object'?s.cfg:structuredClone(DEF.cfg);
+    s.acts=Array.isArray(s.acts)?s.acts:[];
+    s.reminders=Array.isArray(s.reminders)?s.reminders:[];
+    s.learn=normLearn(s.learn);
+    s.layout=s.layout&&typeof s.layout==='object'?s.layout:{};
+    s.notif=!!s.notif;
+    delete s.pins;                     // legacy drag-pins → replaced by sticky layout memory
+    s.version=2;
+    return s;
+  }catch(e){return structuredClone(DEF);}
+}
 function save(){localStorage.timetable=JSON.stringify(S);renderQR();} // QR carries the schedule, so refresh it on every change
 
 // Import shared-link / QR data — on first load AND whenever #data changes (re-scanning while open,
@@ -486,7 +525,7 @@ function importFromHash(rerender){
   if(!h.get('data'))return;
   try{const s=JSON.parse(decodeURIComponent(escape(atob(h.get('data')))));
     if(confirm('Load the schedule from this link? It replaces your current data.')){
-      S=s;S.pins=S.pins||[];S.reminders=S.reminders||[];save();
+      S=s;S.layout=S.layout&&typeof S.layout==='object'?S.layout:{};S.reminders=S.reminders||[];S.learn=normLearn(S.learn);save();
       if(rerender){renderCfg();renderActs();renderReminders();gen();}
     }
   }catch(e){alert('That share link was invalid.');}
@@ -600,7 +639,7 @@ function openDlg(a){
   $('fDay').innerHTML=DAYS.map((d,i)=>`<option value="${i}">${d}</option>`).join('');
   $('fDay').value=a.day??0;$('fStart').value=a.start||'09:00';$('fDur1').value=a.type==='fixed'?a.dur:60;
   $('fLen').value=a.type==='flex'?a.dur:60;$('fCount').value=a.count||1;$('fFreq').value=a.freq||'weekly';
-  $('fWeek').value=a.week||'A';$('fTod').value=a.tod||'any';
+  $('fWeek').value=a.week||'A';loadTod(a.tod);
   $('fDaysAllow').innerHTML=DAYS.map((d,i)=>`<option value="${i}" ${a.days&&a.days.includes(i)?'selected':''}>${d}</option>`).join('');
   syncDlg();$('dlg').showModal();
 }
@@ -627,20 +666,47 @@ function validateFixed(){
 }
 $('fType').onchange=syncDlg;$('fFreq').onchange=syncDlg;
 $('fDay').onchange=validateFixed;$('fStart').oninput=validateFixed;$('fDur1').oninput=validateFixed;
+// ---- time-of-day multi-select + custom range ----
+let todSel=new Set(),todCustom=false;
+function loadTod(tod){
+  todSel=new Set();todCustom=false;
+  if(tod&&tod.start!=null){todCustom=true;$('fTodFrom').value=hhmm(tod.start);$('fTodTo').value=hhmm(tod.end);}
+  else if(Array.isArray(tod))tod.forEach(k=>todSel.add(k));
+  else if(typeof tod==='string'&&TOD_KEYS.includes(tod))todSel.add(tod);
+  renderTodBox();
+}
+function renderTodBox(){
+  const items=TOD_KEYS.map(k=>({k,label:k[0].toUpperCase()+k.slice(1)})).concat([{k:'__custom',label:'Custom range'}]);
+  $('fTodBox').innerHTML=items.map(c=>{const on=c.k==='__custom'?todCustom:todSel.has(c.k);
+    return`<button type="button" class="sec tiny" data-k="${c.k}" aria-current="${on}" style="flex:0 0 auto">${c.label}</button>`;}).join('');
+  $('fTodBox').querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;
+    if(k==='__custom'){todCustom=!todCustom;if(todCustom)todSel.clear();}
+    else{todCustom=false;todSel.has(k)?todSel.delete(k):todSel.add(k);}
+    renderTodBox();});
+  $('fTodCustom').classList.toggle('hide',!todCustom);
+}
+function todValue(){                              // all four (or none) selected → 'any'
+  if(todCustom){const f=$('fTodFrom').value,t=$('fTodTo').value;return(f&&t)?{start:mins(f),end:mins(t)}:'any';}
+  const arr=[...todSel];return(arr.length===0||arr.length===4)?'any':arr;
+}
+function clearActLayout(id){for(const k in S.layout)for(const sk in S.layout[k])if(sk.split('#')[0]===id)delete S.layout[k][sk];}
 $('addBtn').onclick=()=>openDlg(null);
 $('dlgCancel').onclick=()=>$('dlg').close();
-$('dlgDel').onclick=()=>{S.acts=S.acts.filter(x=>x!==editing);S.pins=S.pins.filter(p=>p.actId!==editing.id);
+$('dlgDel').onclick=()=>{clearActLayout(editing.id);S.acts=S.acts.filter(x=>x!==editing);
   save();$('dlg').close();renderActs();gen();};
 $('dlgSave').onclick=()=>{
   const fixed=$('fType').value==='fixed',a=editing||{id:uid()};
   if(fixed&&fixedClashMsg()){validateFixed();return;}   // never commit a clashing/out-of-range fixed slot
+  const before=editing?JSON.stringify([a.type,a.dur,a.count,a.freq,a.tod,a.days,a.week,a.day,a.start]):null;
   a.name=$('fName').value||'Untitled';a.color=$('fColor').value;a.type=$('fType').value;
   if(fixed){a.day=+$('fDay').value;a.start=$('fStart').value;a.dur=+$('fDur1').value;
     ['count','freq','tod','days','week'].forEach(k=>delete a[k]);
   }else{a.dur=+$('fLen').value;a.count=+$('fCount').value;a.freq=$('fFreq').value;
-    a.tod=$('fTod').value;a.week=$('fWeek').value;
+    a.tod=todValue();a.week=$('fWeek').value;
     a.days=[...$('fDaysAllow').selectedOptions].map(o=>+o.value);delete a.day;delete a.start;}
   if(!editing)S.acts.push(a);
+  const after=JSON.stringify([a.type,a.dur,a.count,a.freq,a.tod,a.days,a.week,a.day,a.start]);
+  if(before!==after)clearActLayout(a.id);      // scheduling params changed → re-place next render
   save();$('dlg').close();renderActs();gen();
 };
 
@@ -670,7 +736,7 @@ function dailyLearn(stream,pool){
 function skipWord(){advanceLearn('word',wordPool());renderToday();}
 function todaySummary(){
   const wd=(new Date().getDay()+6)%7,mon=mondayOf(new Date());
-  const pl=schedule(S.cfg,S.acts,{parity:weekParity(mon),key:isoDate(mon)},null,S.pins).placements.filter(p=>p.day===wd);
+  const pl=schedule(S.cfg,S.acts,{parity:weekParity(mon),key:isoDate(mon)},null,null).placements.filter(p=>p.day===wd);
   const rem=(S.reminders||[]).filter(r=>r.day===wd);
   return{count:pl.length,minutes:pl.reduce((s,p)=>s+(p.end-p.start),0),reminders:rem.length};
 }
@@ -765,11 +831,12 @@ let curPlacements=[];
 let dayMode=matchMedia('(max-width:640px)').matches;
 let selDay=(new Date().getDay()+6)%7;
 function gen(){
-  const cfg=S.cfg,view={parity:weekParity(curMon),key:isoDate(curMon)};
+  const cfg=S.cfg,key=isoDate(curMon),view={parity:weekParity(curMon),key};
   renderWkNav();
-  $('topNow').textContent=isoDate(curMon)===isoDate(mondayOf(new Date()))?'this week':'';
-  const{placements,warnings}=schedule(cfg,S.acts,view,shuffleOrder,S.pins);
-  if(S.pins.some(p=>p._drop)){S.pins=S.pins.filter(p=>!p._drop);save();}
+  $('topNow').textContent=key===isoDate(mondayOf(new Date()))?'this week':'';
+  const lay=S.layout[key]||(S.layout[key]={});
+  const{placements,warnings,changed}=schedule(cfg,S.acts,view,shuffleOrder,lay);
+  if(changed)save();
   curPlacements=placements;
   $('warns').innerHTML=warnings.map(w=>`<li>${w}</li>`).join('');
   if(!cfg.days.includes(selDay))selDay=cfg.days[0];
@@ -794,7 +861,7 @@ function gen(){
       if(p.day!==d)return;
       const top=(p.start-cfg.dayStart)/SLOT*PX,h=(p.end-p.start)/SLOT*PX;
       html+=`<div class="block" data-idx="${idx}" style="top:${top}px;height:${h}px;background:${p.act.color}">
-        ${p.kind==='pin'?'<span class="pin">📌</span>':''}${p.act.name}<small>${hhmm(p.start)}–${hhmm(p.end)}</small></div>`;
+        ${p.kind==='manual'?'<span class="pin">📌</span>':''}${p.act.name}<small>${hhmm(p.start)}–${hhmm(p.end)}</small></div>`;
     });
     // reminders overlay — never scheduled, just laid over the slot in a right-hand gutter
     const rem=(S.reminders||[]).filter(r=>r.day===d)
@@ -812,7 +879,7 @@ function gen(){
 }
 let shuffleOrder=null;
 $('modeBtn').onclick=()=>{dayMode=!dayMode;gen();};
-$('shuffleBtn').onclick=()=>{shuffleOrder={};S.acts.forEach(a=>shuffleOrder[a.id]=Math.random());gen();};
+$('shuffleBtn').onclick=()=>{S.layout[isoDate(curMon)]={};shuffleOrder={};S.acts.forEach(a=>shuffleOrder[a.id]=Math.random());gen();shuffleOrder=null;};
 // keep view sane across rotation / resize
 matchMedia('(max-width:640px)').addEventListener('change',e=>{dayMode=e.matches;gen();});
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',updateDayTheme); // recompute tint for the new mode
@@ -822,11 +889,7 @@ let drag=null;
 const cal=$('cal');
 cal.addEventListener('pointerdown',e=>{const b=e.target.closest('.block');if(b)startDrag(e,+b.dataset.idx,b);});
 cal.addEventListener('click',e=>{const r=e.target.closest('.reminder');if(r)openRemDlg(r.dataset.rid);});
-cal.addEventListener('dblclick',e=>{
-  const b=e.target.closest('.block');if(!b)return;
-  const p=curPlacements[+b.dataset.idx];
-  if(p.kind==='pin'){S.pins=S.pins.filter(x=>x!==p.ref);save();gen();}
-  else openDlg(p.act);});
+// tapping a block (pointer down+up without moving) opens the time editor — see dragUp
 function fitsAt(day,start,dur,idx){
   const end=start+dur;
   if(start<S.cfg.dayStart||end>S.cfg.dayEnd)return false;
@@ -839,7 +902,7 @@ function startDrag(e,idx,block){
   Object.assign(ghost.style,{position:'fixed',width:r.width+'px',height:r.height+'px',
     left:r.left+'px',top:r.top+'px',opacity:.9,pointerEvents:'none',zIndex:999,margin:0});
   document.body.append(ghost);block.style.opacity=.25;
-  drag={idx,p,dur:p.end-p.start,offY:e.clientY-r.top,ghost,tDay:p.day,tStart:p.start,valid:true};
+  drag={idx,p,block,dur:p.end-p.start,offY:e.clientY-r.top,ghost,tDay:p.day,tStart:p.start,valid:true};
   block.setPointerCapture?.(e.pointerId);
   window.addEventListener('pointermove',dragMove);
   window.addEventListener('pointerup',dragUp,{once:true});
@@ -858,17 +921,42 @@ function dragMove(e){
 function dragUp(){
   window.removeEventListener('pointermove',dragMove);
   drag.ghost.remove();
+  if(drag.block)drag.block.style.opacity='';
   const{p,valid,tDay,tStart,dur}=drag;
   const moved=valid&&(tDay!==p.day||tStart!==p.start);
   drag=null;
   if(moved){
     if(p.kind==='fixed'){p.act.day=tDay;p.act.start=hhmm(tStart);renderActs();}
-    else if(p.kind==='pin'){p.ref.day=tDay;p.ref.start=tStart;}
-    else S.pins.push({id:uid(),actId:p.act.id,week:isoDate(curMon),day:tDay,start:tStart,dur});
-    save();
-  }
-  gen();
+    else{const key=isoDate(curMon);(S.layout[key]||(S.layout[key]={}))[p.key]={day:tDay,start:tStart,dur,manual:true};}
+    save();gen();
+  }else openBlockEdit(p);   // a tap (no move) opens the block time editor
 }
+// ---------- edit a placed block's time (tap a block) ----------
+let blkTarget=null,blkIdx=-1;
+function openBlockEdit(p){
+  blkTarget=p;blkIdx=curPlacements.indexOf(p);
+  $('blkName').textContent=p.act.name+' · '+DAYS[p.day];
+  $('blkStart').value=hhmm(p.start);$('blkEnd').value=hhmm(p.end);
+  blkValidate();$('blkDlg').showModal();
+}
+function blkMsg(){
+  const s=$('blkStart').value,e=$('blkEnd').value;if(!s||!e)return'Set a start and end.';
+  const ss=mins(s),ee=mins(e);
+  if(ee<=ss)return'End must be after start.';
+  if(ss<S.cfg.dayStart||ee>S.cfg.dayEnd)return`Outside your day window (${hhmm(S.cfg.dayStart)}–${hhmm(S.cfg.dayEnd)}).`;
+  return curPlacements.some((q,i)=>i!==blkIdx&&q.day===blkTarget.day&&ss<q.end&&ee>q.start)?'Overlaps another block on this day.':'';
+}
+function blkValidate(){const m=blkMsg();$('blkWarn').textContent=m;$('blkWarn').classList.toggle('hide',!m);$('blkSave').disabled=!!m;}
+$('blkStart').oninput=blkValidate;$('blkEnd').oninput=blkValidate;
+$('blkCancel').onclick=()=>$('blkDlg').close();
+$('blkEditAct').onclick=()=>{$('blkDlg').close();openDlg(blkTarget.act);};
+$('blkSave').onclick=()=>{
+  if(blkMsg())return;
+  const ss=mins($('blkStart').value),ee=mins($('blkEnd').value),p=blkTarget;
+  if(p.kind==='fixed'){p.act.start=hhmm(ss);p.act.dur=ee-ss;renderActs();}
+  else{const key=isoDate(curMon);(S.layout[key]||(S.layout[key]={}))[p.key]={day:p.day,start:ss,dur:ee-ss,manual:true};}
+  save();$('blkDlg').close();gen();
+};
 
 // ---------- sync & export ----------
 function dl(name,text,mime){const u=URL.createObjectURL(new Blob([text],{type:mime}));
@@ -876,9 +964,9 @@ function dl(name,text,mime){const u=URL.createObjectURL(new Blob([text],{type:mi
 $('expBtn').onclick=()=>dl('timetable-backup.json',JSON.stringify(S,null,2),'application/json');
 $('impBtn').onclick=()=>$('impFile').click();
 $('impFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();
-  rd.onload=()=>{try{S=JSON.parse(rd.result);S.pins=S.pins||[];save();renderCfg();renderActs();renderReminders();gen();
+  rd.onload=()=>{try{localStorage.timetable=rd.result;S=loadState();save();renderCfg();renderActs();renderReminders();renderCats();gen();
     alert('Backup imported.');}catch(x){alert('Not a valid backup file.');}};rd.readAsText(f);};
-$('resetPinsBtn').onclick=()=>{S.pins=[];save();gen();};
+$('resetPinsBtn').onclick=()=>{S.layout={};save();gen();};
 $('shareBtn').onclick=async()=>{
   const link=location.href.split('#')[0]+'#data='+btoa(unescape(encodeURIComponent(JSON.stringify(S))));
   try{await navigator.clipboard.writeText(link);alert('Share link copied. Open it on another device to load this schedule.');}
@@ -896,7 +984,7 @@ function icsStamp(mon,day,startMin,dur){
 $('icsBtn').onclick=()=>{
   const cfg=S.cfg,mon=nextMonday(),mon7=new Date(mon.getTime()+7*864e5);
   // recurring template only; per-week drag pins stay in-app
-  const A=schedule(cfg,S.acts,'A',null,[]),B=schedule(cfg,S.acts,'B',null,[]);
+  const A=schedule(cfg,S.acts,'A',null,null),B=schedule(cfg,S.acts,'B',null,null);
   const ev=(p,anchor,interval)=>{
     const[st,en]=icsStamp(anchor,p.day,p.start,p.end-p.start);
     return['BEGIN:VEVENT','UID:'+uid()+'@timetable','DTSTAMP:'+st,'DTSTART:'+st,'DTEND:'+en,
@@ -1030,16 +1118,24 @@ function runTests(){
     {id:'g',name:'Gym',type:'flex',dur:60,count:3,freq:'weekly',tod:'any'},
     {id:'p',name:'Paint',type:'flex',dur:90,count:1,freq:'fortnight',week:'B',tod:'any'},
   ];
-  const A=schedule(cfg,acts,'A',null,[]),B=schedule(cfg,acts,'B',null,[]);
+  const A=schedule(cfg,acts,'A',null,null),B=schedule(cfg,acts,'B',null,null);
   console.assert(A.placements.filter(p=>p.act.id==='g').length===3,'gym placed 3×');
   console.assert(A.placements.some(p=>p.act.id==='u'&&p.start===540),'uni fixed at 09:00');
   console.assert(A.placements.filter(p=>p.act.id==='p').length===0,'paint absent in week A');
   console.assert(B.placements.filter(p=>p.act.id==='p').length===1,'paint present in week B');
-  // a pin replaces one auto gym session and is honoured
-  const pinned=schedule(cfg,acts,'A',null,[{actId:'g',week:'A',day:4,start:600,dur:60}]);
-  console.assert(pinned.placements.filter(p=>p.act.id==='g').length===3,'gym still totals 3 with a pin');
-  console.assert(pinned.placements.some(p=>p.act.id==='g'&&p.day===4&&p.start===600&&p.kind==='pin'),'pinned gym honoured');
-  for(const wk of[A,B,pinned]){
+  // layout memory: a remembered position is kept, others still total correctly
+  const lay={'g#0':{day:4,start:600,dur:60,manual:true}};
+  const held=schedule(cfg,acts,'A',null,lay);
+  console.assert(held.placements.filter(p=>p.act.id==='g').length===3,'gym still totals 3 with a held session');
+  console.assert(held.placements.some(p=>p.act.id==='g'&&p.day===4&&p.start===600&&p.kind==='manual'),'held gym honoured at its spot');
+  // sticky: re-running with the same layout keeps every position identical (no reflow)
+  const sig=w=>w.placements.filter(p=>p.act.id==='g').map(p=>p.day+'@'+p.start).sort().join(',');
+  console.assert(sig(held)===sig(schedule(cfg,acts,'A',null,lay)),'gym layout stable across re-renders');
+  // time-of-day: night window, multi-select union, custom range, all→any
+  console.assert(TOD.night[0]===1260&&TOD.night[1]===1440,'night is 21:00–24:00');
+  console.assert(todWindows(['morning','night']).length===2,'multi tod → union of windows');
+  console.assert(todWindows({start:600,end:660})[0][0]===600,'custom tod range respected');
+  for(const wk of[A,B,held]){
     const byDay={};wk.placements.forEach(p=>(byDay[p.day]??=[]).push(p));
     for(const d in byDay){const ps=byDay[d].sort((a,b)=>a.start-b.start);
       for(let i=1;i<ps.length;i++)console.assert(ps[i].start>=ps[i-1].end,'no overlap on day '+d);}
