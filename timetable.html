@@ -11,13 +11,18 @@
 <title>Weekly Timetable</title>
 <style>
   :root{
-    --bg:#f7f7f8;--panel:#fff;--line:#e3e3e8;--text:#1c1c1e;--muted:#6b6b72;
-    --accent:#3b6ef5;--warn:#b23;--grid:#ececed;--slotpx:24px;
-    --hour:#ececed;--half:#f4f4f6;
+    --bg:#e8ecf4;--panel:#e8ecf4;--line:#d4dae6;--text:#2a2f3a;--muted:#79808f;
+    --accent:#3b6ef5;--warn:#d23b52;--grid:#d9dfea;--slotpx:24px;
+    --hour:#ccd3e2;--half:#dee4ef;
+    --sh-d:#c4cbd9;--sh-l:#ffffff;
+    --nm:5px 5px 12px var(--sh-d),-5px -5px 12px var(--sh-l);
+    --nm-sm:3px 3px 7px var(--sh-d),-3px -3px 7px var(--sh-l);
+    --nm-in:inset 3px 3px 6px var(--sh-d),inset -3px -3px 6px var(--sh-l);
   }
   @media (prefers-color-scheme:dark){
-    :root{--bg:#151517;--panel:#1e1e21;--line:#303035;--text:#eaeaec;--muted:#9a9aa2;
-          --accent:#6b93ff;--warn:#ff7a7a;--grid:#242428;--hour:#242428;--half:#202024;}
+    :root{--bg:#202430;--panel:#202430;--line:#333a48;--text:#e6e9f2;--muted:#99a2b4;
+          --accent:#6b93ff;--warn:#ff7a8a;--grid:#2a3040;--hour:#2d3343;--half:#272d3b;
+          --sh-d:#161922;--sh-l:#2b3243;}
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -26,7 +31,7 @@
   h1{font-size:16px;margin:0}
   h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:20px 0 8px}
   .topbar{display:flex;align-items:center;gap:10px;padding:12px 16px;
-    background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;
+    background:var(--panel);box-shadow:0 3px 12px var(--sh-d);position:sticky;top:0;z-index:10;
     padding-top:max(12px,env(safe-area-inset-top))}
   .topbar h1{font-size:17px;letter-spacing:-.01em}
   .topbar .now{margin-left:auto;font-size:12px;color:var(--muted);font-weight:600}
@@ -39,10 +44,11 @@
   body[data-view=reminders] #view-reminders,
   body[data-view=settings] #view-settings{display:block}
   /* bottom ribbon nav (Instagram-style) */
-  .ribbon{display:flex;background:var(--panel);border-top:1px solid var(--line);z-index:20;
+  .ribbon{display:flex;background:var(--panel);z-index:20;box-shadow:0 -3px 12px var(--sh-d);
     padding-bottom:env(safe-area-inset-bottom)}
-  .ribbon button{flex:1;background:none;border:none;border-radius:0;color:var(--muted);
-    font-weight:600;font-size:10.5px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px}
+  .ribbon button{flex:1;background:none;border:none;border-radius:0;box-shadow:none;color:var(--muted);
+    font-weight:600;font-size:10.5px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 2px}
+  .ribbon button:active{transform:none}
   .ribbon button .ic{font-size:20px;line-height:1;filter:grayscale(.4);opacity:.7}
   .ribbon button[aria-current=true]{color:var(--accent)}
   .ribbon button[aria-current=true] .ic{filter:none;opacity:1}
@@ -54,18 +60,21 @@
   .labelrow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
   .labelrow .wklabel{margin:0}
   .hdnum{display:block;font-size:10px;font-weight:500;color:var(--muted);margin-top:1px}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;
-    box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  .panel{background:var(--panel);border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:var(--nm)}
   label{display:block;font-size:12px;color:var(--muted);margin:8px 0 2px}
-  input,select,button{font:inherit;color:var(--text);background:var(--bg);
-    border:1px solid var(--line);border-radius:7px;padding:7px 9px}
-  input,select{width:100%}
+  input,select,button{font:inherit;color:var(--text);background:var(--panel);
+    border:none;border-radius:10px;padding:9px 11px}
+  input,select{width:100%;box-shadow:var(--nm-in)}
+  input:focus,select:focus{outline:none;box-shadow:var(--nm-in),0 0 0 2px var(--accent)}
   .row{display:flex;gap:8px}.row>*{flex:1}
-  button{cursor:pointer;background:var(--accent);color:#fff;border:none;font-weight:600}
-  button.sec{background:var(--bg);color:var(--text);border:1px solid var(--line);font-weight:500}
-  button.tiny{padding:3px 8px;font-size:12px}
-  button:hover{filter:brightness(1.05)}button:active{transform:translateY(1px)}
-  button:disabled{opacity:.45;cursor:not-allowed;filter:none;transform:none}
+  button{cursor:pointer;background:var(--accent);color:#fff;border:none;font-weight:600;
+    border-radius:10px;box-shadow:var(--nm-sm)}
+  button.sec{background:var(--panel);color:var(--text);font-weight:600;box-shadow:var(--nm-sm)}
+  button.tiny{padding:5px 10px;font-size:12px}
+  button:hover{filter:brightness(1.04)}
+  button:active{transform:translateY(1px)}
+  button.sec:active,button.tiny:active{transform:none;box-shadow:var(--nm-in)}
+  button:disabled{opacity:.5;cursor:not-allowed;filter:none;transform:none;box-shadow:none}
   .acts{list-style:none;margin:0;padding:0}
   .acts li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
   .dot{width:12px;height:12px;border-radius:3px;flex:0 0 12px}
@@ -75,11 +84,11 @@
   .toolbar .spacer{flex:1}
   .hint{font-size:12px;color:var(--muted);margin:0 0 10px}
   .warns{color:var(--warn);font-size:12px;margin:0 0 10px;padding-left:18px}
-  .chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px;padding-bottom:2px}
-  .chips button{flex:0 0 auto}
-  .chips button[aria-current=true]{background:var(--accent);color:#fff}
+  .chips{display:flex;gap:8px;overflow-x:auto;margin-bottom:8px;padding:2px 2px 8px}
+  .chips button{flex:0 0 auto;border-radius:20px;box-shadow:var(--nm-sm)}
+  .chips button[aria-current=true]{background:var(--accent);color:#fff;box-shadow:var(--nm-in)}
   /* calendar */
-  .cal{display:grid;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:100%}
+  .cal{display:grid;border-radius:14px;overflow:hidden;width:100%;box-shadow:var(--nm-in)}
   .cal .hd{background:var(--panel);font-weight:600;text-align:center;padding:6px 2px;
     border-bottom:1px solid var(--line);font-size:12px;position:sticky;top:0}
   .timecol{position:relative}
@@ -90,8 +99,8 @@
       repeating-linear-gradient(to bottom,var(--hour) 0 1px,transparent 1px calc(var(--slotpx)*2)),
       repeating-linear-gradient(to bottom,var(--half) 0 1px,transparent 1px var(--slotpx));
     background-position:0 var(--hshift,0px),0 0}
-  .block{position:absolute;left:2px;right:2px;border-radius:5px;padding:3px 5px;
-    font-size:11px;color:#fff;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.15);
+  .block{position:absolute;left:2px;right:2px;border-radius:7px;padding:3px 5px;
+    font-size:11px;color:#fff;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.22);
     cursor:grab;touch-action:none;user-select:none}
   .block small{display:block;opacity:.85}
   .block .pin{position:absolute;top:2px;right:4px;font-size:10px}
@@ -102,19 +111,24 @@
     border-width:0 0 8px 8px;border-color:transparent transparent rgba(0,0,0,.25) transparent}
   .swatch{flex:0 0 26px;height:26px;border-radius:6px;border:2px solid transparent;cursor:pointer;padding:0}
   .swatch[aria-current=true]{border-color:var(--text)}
-  dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);
-    padding:18px;width:340px;max-width:92vw}
+  dialog{border:none;border-radius:18px;background:var(--panel);color:var(--text);
+    padding:20px;width:340px;max-width:92vw;box-shadow:var(--nm),0 12px 40px rgba(0,0,0,.3)}
   dialog::backdrop{background:rgba(0,0,0,.4)}
   .hide{display:none!important}
   input[type=color]{height:36px;padding:2px}
   code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
   #qrImg{border-radius:8px;background:#fff;padding:8px;max-width:100%;height:auto;display:inline-block}
-  .tcard .kicker{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin-bottom:6px}
+  .tcard{position:relative;overflow:hidden;padding-left:22px}
+  .tcard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--cardc,var(--accent))}
+  .tcard .kicker{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--cardc,var(--accent));font-weight:800;margin-bottom:6px}
   .tcard .word{font-size:24px;font-weight:800;letter-spacing:-.01em}
   .tcard .def{margin-top:4px}
   .tcard .ex{margin-top:8px;color:var(--muted);font-style:italic}
   .tcard .body{font-size:15px;line-height:1.5}
-  .bigstat{font-size:40px;font-weight:800;line-height:1;color:var(--accent);min-width:52px;text-align:center}
+  .tcard .skip{position:absolute;top:14px;right:14px;font-size:11px;font-weight:700;padding:5px 12px;
+    border-radius:20px;background:var(--panel);color:var(--muted);box-shadow:var(--nm-sm);width:auto}
+  .tcard .skip:active{box-shadow:var(--nm-in)}
+  .bigstat{font-size:42px;font-weight:800;line-height:1;color:var(--cardc,var(--accent));min-width:56px;text-align:center}
   details.panel summary{cursor:pointer;font-weight:600;list-style:none}
   details.panel summary::-webkit-details-marker{display:none}
   details.panel ul{margin:10px 0 0;padding:0;list-style:none}
@@ -134,12 +148,11 @@
   <section id="view-today" class="view">
     <h2 style="margin-top:4px">Today</h2>
     <p id="todayDate" class="wklabel"></p>
-    <div class="panel" id="busyCard" style="display:flex;gap:14px;align-items:center"></div>
-    <div class="panel tcard" id="wordCard"></div>
-    <button id="skipWordBtn" class="sec" style="width:100%;margin:-4px 0 14px">Skip — I already know this word</button>
+    <div class="panel tcard" id="busyCard" style="display:flex;gap:16px;align-items:center;--cardc:#3b6ef5"></div>
+    <div class="panel tcard" id="wordCard" style="--cardc:#7c5cff"></div>
     <details class="panel"><summary>Word history</summary><ul id="wordHist"></ul></details>
-    <div class="panel tcard" id="factCard"></div>
-    <div class="panel tcard" id="topicCard"></div>
+    <div class="panel tcard" id="factCard" style="--cardc:#12b3a6"></div>
+    <div class="panel tcard" id="topicCard" style="--cardc:#f39325"></div>
   </section>
 
   <!-- ============ SCHEDULE PAGE ============ -->
@@ -622,8 +635,10 @@ function renderToday(){
     <b>${lvl[0]}</b><div class="meta">${lvl[1]}</div>
     <div class="meta">${s.count} activit${s.count===1?'y':'ies'} · ${dur} scheduled · ${s.reminders} reminder${s.reminders===1?'':'s'}</div></div>`;
   const w=dailyLearn('word',wordPool());
-  $('wordCard').innerHTML=w?`<div class="kicker">Word of the day</div><div class="word">${w.w}</div>
+  $('wordCard').innerHTML=w?`<button class="skip" title="Skip — I already know this word">Skip ↻</button>
+    <div class="kicker">Word of the day</div><div class="word">${w.w}</div>
     <div class="def">${w.def}</div>${w.ex?`<div class="ex">“${w.ex}”</div>`:''}`:'';
+  const sk=$('wordCard').querySelector('.skip');if(sk)sk.onclick=skipWord;
   const f=dailyLearn('fact',factPool());
   $('factCard').innerHTML=f?`<div class="kicker">Fact of the day · ${catLabel(f.cat)}</div><div class="body">${f.text}</div>`
     :`<div class="kicker">Fact of the day</div><div class="body meta">Pick some topics in Settings to get a daily fact.</div>`;
@@ -633,7 +648,6 @@ function renderToday(){
     :`<div class="kicker">Read about today</div><div class="body meta">Pick some topics in Settings.</div>`;
   renderWordHistory();
 }
-$('skipWordBtn').onclick=skipWord;
 function renderCats(){
   const sel=new Set(S.learn.cats);
   $('catList').innerHTML=LEARN_CATEGORIES.map(c=>`<button class="sec tiny" data-cat="${c.id}" aria-current="${sel.has(c.id)}" style="flex:0 0 auto">${c.label}</button>`).join('');
