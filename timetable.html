@@ -11,10 +11,10 @@
 <title>Weekly Timetable</title>
 <style>
   :root{
-    --bg:#eef5e9;--panel:#eef5e9;--line:#d6ddcf;--text:#2a2f2a;--muted:#79857a;
-    --accent:#6fa56c;--warn:#d23b52;--grid:#dde6d6;--slotpx:24px;
-    --hour:#d6ddcf;--half:#e4ebdf;
-    --sh-d:#ccd5c4;--sh-l:#ffffff;
+    --bg:#e8ecf4;--panel:#e8ecf4;--line:#d4dae6;--text:#2a2f3a;--muted:#79808f;
+    --accent:#3b6ef5;--warn:#d23b52;--grid:#d9dfea;--slotpx:24px;
+    --hour:#ccd3e2;--half:#dee4ef;
+    --sh-d:#c4cbd9;--sh-l:#ffffff;
     --nm:5px 5px 12px var(--sh-d),-5px -5px 12px var(--sh-l);
     --nm-sm:3px 3px 7px var(--sh-d),-3px -3px 7px var(--sh-l);
     --nm-in:inset 3px 3px 6px var(--sh-d),inset -3px -3px 6px var(--sh-l);
@@ -677,7 +677,7 @@ function todaySummary(){
 // day-mood theming: today's load picks a palette that tints the whole app
 const DAY_META={
   flexible:{names:['Flexible Day','Gentle Flow'],desc:'A relaxed day with room to breathe.',bg:'#E9F6F9',accent:'#57AFC2'},
-  balanced:{names:['Balanced Day','Steady Day'],desc:'A comfortable, steady amount on today.',bg:'#d5f9bc',accent:'#9df162'},
+  balanced:{names:['Balanced Day','Steady Day'],desc:'A comfortable, steady amount on today.',bg:'#EEF5E9',accent:'#6FA56C'},
   focus:{names:['Focus Day','Focused Momentum'],desc:'A full, focused day — pace yourself and ride the momentum.',bg:'#F0EBFA',accent:'#7866B8'},
 };
 function shade(hex,amt){const n=parseInt(hex.slice(1),16),r=n>>16&255,g=n>>8&255,b=n&255,
