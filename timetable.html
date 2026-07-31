@@ -39,6 +39,7 @@
   .view{display:none;max-width:560px;margin:0 auto}
   #view-schedule{max-width:none}
   body[data-view=today] #view-today,
+  body[data-view=wordhist] #view-wordhist,
   body[data-view=schedule] #view-schedule,
   body[data-view=activities] #view-activities,
   body[data-view=reminders] #view-reminders,
@@ -125,14 +126,14 @@
   .tcard .def{margin-top:4px}
   .tcard .ex{margin-top:8px;color:var(--muted);font-style:italic}
   .tcard .body{font-size:15px;line-height:1.5}
-  .tcard .skip{position:absolute;top:14px;right:14px;font-size:11px;font-weight:700;padding:5px 12px;
-    border-radius:20px;background:var(--panel);color:var(--muted);box-shadow:var(--nm-sm);width:auto}
-  .tcard .skip:active{box-shadow:var(--nm-in)}
+  .tcard .wcbtns{position:absolute;top:14px;right:14px;display:flex;gap:8px}
+  .tcard .wcbtns button{font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;
+    background:var(--panel);color:var(--muted);box-shadow:var(--nm-sm);width:auto}
+  .tcard .wcbtns button:active{box-shadow:var(--nm-in)}
   .bigstat{font-size:42px;font-weight:800;line-height:1;color:var(--cardc,var(--accent));min-width:56px;text-align:center}
-  details.panel summary{cursor:pointer;font-weight:600;list-style:none}
-  details.panel summary::-webkit-details-marker{display:none}
-  details.panel ul{margin:10px 0 0;padding:0;list-style:none}
-  details.panel li{padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+  .histlist{list-style:none;margin:0;padding:0}
+  .histlist li{padding:10px 2px;border-top:1px solid var(--line);font-size:14px;line-height:1.5}
+  .histlist li:first-child{border-top:none}
   @media print{.topbar,.toolbar,.chips,.hint,.ribbon,.wknav{display:none}main{overflow:visible}}
 </style>
 </head>
@@ -150,7 +151,6 @@
     <p id="todayDate" class="wklabel"></p>
     <div class="panel tcard" id="busyCard" style="display:flex;gap:16px;align-items:center;--cardc:#3b6ef5"></div>
     <div class="panel tcard" id="wordCard" style="--cardc:#7c5cff"></div>
-    <details class="panel"><summary>Word history</summary><ul id="wordHist"></ul></details>
     <div class="panel tcard" id="factCard" style="--cardc:#12b3a6"></div>
     <div class="panel tcard" id="topicCard" style="--cardc:#f39325"></div>
   </section>
@@ -255,6 +255,16 @@
       </div>
       <button id="resetPinsBtn" class="sec" style="width:100%;margin-top:8px">Reset drag adjustments</button>
     </div>
+  </section>
+
+  <!-- ============ WORD HISTORY (sub-page of Today) ============ -->
+  <section id="view-wordhist" class="view">
+    <div style="display:flex;align-items:center;gap:10px;margin:4px 0 14px">
+      <button id="whBack" class="sec tiny">←</button>
+      <h2 style="margin:0">Word history</h2>
+    </div>
+    <input id="whSearch" placeholder="Search words or meanings…" style="margin-bottom:14px">
+    <div class="panel"><ul id="wordHist" class="histlist"></ul></div>
   </section>
 </main>
 
@@ -464,8 +474,9 @@ window.addEventListener('hashchange',()=>importFromHash(true));
 
 // ---------- nav (bottom ribbon) ----------
 function setView(v){document.body.dataset.view=v;
-  document.querySelectorAll('.ribbon button').forEach(b=>b.setAttribute('aria-current',b.dataset.nav===v));
-  if(v==='today')renderToday();}
+  document.querySelectorAll('.ribbon button').forEach(b=>b.setAttribute('aria-current',b.dataset.nav===v||(v==='wordhist'&&b.dataset.nav==='today')));
+  if(v==='today')renderToday();
+  if(v==='wordhist')renderWordHistory();}
 document.querySelectorAll('.ribbon button').forEach(b=>b.onclick=()=>setView(b.dataset.nav));
 
 // ---------- setup: day window ----------
@@ -617,11 +628,16 @@ function todaySummary(){
   return{count:pl.length,minutes:pl.reduce((s,p)=>s+(p.end-p.start),0),reminders:rem.length};
 }
 function renderWordHistory(){
+  const q=($('whSearch').value||'').trim().toLowerCase();
   const seen=new Set(),pool=wordPool(),rows=[];
   for(let i=S.learn.word.history.length-1;i>=0;i--){const h=S.learn.word.history[i];if(seen.has(h.id))continue;seen.add(h.id);
-    const w=pool.find(x=>x.id===h.id);if(w)rows.push(`<li><b>${w.w}</b> — ${w.def} <span class="meta">(${h.date})</span></li>`);}
-  $('wordHist').innerHTML=rows.length?rows.join(''):'<li class="meta">No words yet — come back tomorrow.</li>';
+    const w=pool.find(x=>x.id===h.id);if(!w)continue;
+    if(q&&!(w.w.toLowerCase().includes(q)||w.def.toLowerCase().includes(q)))continue;
+    rows.push(`<li><b>${w.w}</b> — ${w.def} <span class="meta">(${h.date})</span></li>`);}
+  $('wordHist').innerHTML=rows.length?rows.join(''):`<li class="meta">${q?'No matches.':'No words yet — come back tomorrow.'}</li>`;
 }
+$('whBack').onclick=()=>setView('today');
+$('whSearch').oninput=renderWordHistory;
 function renderToday(){
   const d=new Date();
   $('todayDate').textContent=DAYS[(d.getDay()+6)%7]+', '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear();
@@ -635,10 +651,11 @@ function renderToday(){
     <b>${lvl[0]}</b><div class="meta">${lvl[1]}</div>
     <div class="meta">${s.count} activit${s.count===1?'y':'ies'} · ${dur} scheduled · ${s.reminders} reminder${s.reminders===1?'':'s'}</div></div>`;
   const w=dailyLearn('word',wordPool());
-  $('wordCard').innerHTML=w?`<button class="skip" title="Skip — I already know this word">Skip ↻</button>
+  $('wordCard').innerHTML=w?`<div class="wcbtns"><button class="hist">History</button><button class="skip" title="Skip — I already know this word">Skip ↻</button></div>
     <div class="kicker">Word of the day</div><div class="word">${w.w}</div>
     <div class="def">${w.def}</div>${w.ex?`<div class="ex">“${w.ex}”</div>`:''}`:'';
-  const sk=$('wordCard').querySelector('.skip');if(sk)sk.onclick=skipWord;
+  $('wordCard').querySelector('.skip')?.addEventListener('click',skipWord);
+  $('wordCard').querySelector('.hist')?.addEventListener('click',()=>{$('whSearch').value='';setView('wordhist');});
   const f=dailyLearn('fact',factPool());
   $('factCard').innerHTML=f?`<div class="kicker">Fact of the day · ${catLabel(f.cat)}</div><div class="body">${f.text}</div>`
     :`<div class="kicker">Fact of the day</div><div class="body meta">Pick some topics in Settings to get a daily fact.</div>`;
@@ -646,7 +663,6 @@ function renderToday(){
   $('topicCard').innerHTML=t?`<div class="kicker">Read about today · ${catLabel(t.cat)}</div>
     <div class="word" style="font-size:18px">${t.title}</div><div class="def">${t.blurb}</div>`
     :`<div class="kicker">Read about today</div><div class="body meta">Pick some topics in Settings.</div>`;
-  renderWordHistory();
 }
 function renderCats(){
   const sel=new Set(S.learn.cats);
