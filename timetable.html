@@ -149,7 +149,7 @@
   <section id="view-today" class="view">
     <h2 style="margin-top:4px">Today</h2>
     <p id="todayDate" class="wklabel"></p>
-    <div class="panel tcard" id="busyCard" style="display:flex;gap:16px;align-items:center;--cardc:#3b6ef5"></div>
+    <div class="panel tcard" id="busyCard" style="display:flex;gap:16px;align-items:center"></div>
     <div class="panel tcard" id="wordCard" style="--cardc:#7c5cff"></div>
     <div class="panel tcard" id="factCard" style="--cardc:#12b3a6"></div>
     <div class="panel tcard" id="topicCard" style="--cardc:#f39325"></div>
@@ -627,6 +627,26 @@ function todaySummary(){
   const rem=(S.reminders||[]).filter(r=>r.day===wd);
   return{count:pl.length,minutes:pl.reduce((s,p)=>s+(p.end-p.start),0),reminders:rem.length};
 }
+// day-mood theming: today's load picks a palette that tints the whole app
+const DAY_META={
+  flexible:{names:['Flexible Day','Gentle Flow'],desc:'A relaxed day with room to breathe.',bg:'#E9F6F9',accent:'#57AFC2'},
+  balanced:{names:['Balanced Day','Steady Day'],desc:'A comfortable, steady amount on today.',bg:'#EEF5E9',accent:'#6FA56C'},
+  focus:{names:['Focus Day','Focused Momentum'],desc:'A full, focused day — pace yourself and ride the momentum.',bg:'#F0EBFA',accent:'#7866B8'},
+};
+function shade(hex,amt){const n=parseInt(hex.slice(1),16),r=n>>16&255,g=n>>8&255,b=n&255,
+  f=t=>Math.max(0,Math.min(255,Math.round(amt<0?t*(1+amt):t+(255-t)*amt)));
+  return'#'+[f(r),f(g),f(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+function applyDayTheme(type){
+  const m=DAY_META[type],dark=matchMedia('(prefers-color-scheme:dark)').matches,r=document.documentElement.style;
+  const bg=dark?shade(m.accent,-0.82):m.bg;                 // dark mode keeps a dark base, tinted with the day hue
+  r.setProperty('--accent',m.accent);
+  r.setProperty('--bg',bg);r.setProperty('--panel',bg);
+  r.setProperty('--sh-d',shade(bg,dark?-0.5:-0.14));r.setProperty('--sh-l',shade(bg,dark?0.18:0.8));
+  r.setProperty('--hour',shade(bg,dark?0.16:-0.1));r.setProperty('--half',shade(bg,dark?0.09:-0.045));
+  const mt=document.querySelector('meta[name=theme-color]');if(mt)mt.content=bg;
+}
+const dayTypeFor=mins=>mins<120?'flexible':mins<300?'balanced':'focus';
+function updateDayTheme(){applyDayTheme(dayTypeFor(todaySummary().minutes));}
 function renderWordHistory(){
   const q=($('whSearch').value||'').trim().toLowerCase();
   const seen=new Set(),pool=wordPool(),rows=[];
@@ -643,12 +663,11 @@ function renderToday(){
   $('todayDate').textContent=DAYS[(d.getDay()+6)%7]+', '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear();
   const s=todaySummary(),hrs=s.minutes/60|0,mm=s.minutes%60;
   const dur=s.minutes?`${hrs?hrs+'h ':''}${mm?mm+'m':''}`.trim():'0m';
-  const lvl=s.minutes===0?['Clear day','Nothing scheduled — enjoy the free time.']
-    :s.minutes<120?['Light day','A relaxed day with a little on.']
-    :s.minutes<300?['Steady day','A comfortable amount on today.']
-    :['Busy day','A full schedule — pace yourself.'];
+  const type=dayTypeFor(s.minutes),m=DAY_META[type];
+  const doy=Math.floor((Date.now()-new Date(new Date().getFullYear(),0,0))/864e5); // alternate the two names by day
+  applyDayTheme(type);
   $('busyCard').innerHTML=`<div class="bigstat">${s.count}</div><div>
-    <b>${lvl[0]}</b><div class="meta">${lvl[1]}</div>
+    <b>${m.names[doy%2]}</b><div class="meta">${m.desc}</div>
     <div class="meta">${s.count} activit${s.count===1?'y':'ies'} · ${dur} scheduled · ${s.reminders} reminder${s.reminders===1?'':'s'}</div></div>`;
   const w=dailyLearn('word',wordPool());
   $('wordCard').innerHTML=w?`<div class="wcbtns"><button class="hist">History</button><button class="skip" title="Skip — I already know this word">Skip ↻</button></div>
@@ -742,12 +761,14 @@ function gen(){
     html+=`</div>`;
   });
   cal.innerHTML=html;
+  updateDayTheme();          // keep the app tint in sync with today's load
 }
 let shuffleOrder=null;
 $('modeBtn').onclick=()=>{dayMode=!dayMode;gen();};
 $('shuffleBtn').onclick=()=>{shuffleOrder={};S.acts.forEach(a=>shuffleOrder[a.id]=Math.random());gen();};
 // keep view sane across rotation / resize
 matchMedia('(max-width:640px)').addEventListener('change',e=>{dayMode=e.matches;gen();});
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',updateDayTheme); // recompute tint for the new mode
 
 // ---------- drag to adjust ----------
 let drag=null;
@@ -1010,6 +1031,10 @@ function runTests(){
   S.learn.cats=['physics'];
   console.assert(factPool().length&&factPool().every(f=>f.cat==='physics'),'fact pool respects selected categories');
   S.learn=JSON.parse(savedLearn);save();
+  // day-mood theming
+  console.assert(shade('#ffffff',-0.5)==='#808080'&&shade('#000000',1)==='#ffffff','shade darkens/lightens correctly');
+  console.assert(dayTypeFor(0)==='flexible'&&dayTypeFor(200)==='balanced'&&dayTypeFor(400)==='focus','load maps to the right day type');
+  console.assert(['flexible','balanced','focus'].every(k=>DAY_META[k].names.length===2),'each day type has two alternating names');
   console.log('%cself-test complete — check for assertion failures above','color:green');
 }
 if(location.hash==='#test')runTests();
