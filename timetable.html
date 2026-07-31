@@ -33,6 +33,7 @@
   main{flex:1;overflow:auto;padding:14px;-webkit-overflow-scrolling:touch}
   .view{display:none;max-width:560px;margin:0 auto}
   #view-schedule{max-width:none}
+  body[data-view=today] #view-today,
   body[data-view=schedule] #view-schedule,
   body[data-view=activities] #view-activities,
   body[data-view=reminders] #view-reminders,
@@ -108,10 +109,20 @@
   input[type=color]{height:36px;padding:2px}
   code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
   #qrImg{border-radius:8px;background:#fff;padding:8px;max-width:100%;height:auto;display:inline-block}
+  .tcard .kicker{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin-bottom:6px}
+  .tcard .word{font-size:24px;font-weight:800;letter-spacing:-.01em}
+  .tcard .def{margin-top:4px}
+  .tcard .ex{margin-top:8px;color:var(--muted);font-style:italic}
+  .tcard .body{font-size:15px;line-height:1.5}
+  .bigstat{font-size:40px;font-weight:800;line-height:1;color:var(--accent);min-width:52px;text-align:center}
+  details.panel summary{cursor:pointer;font-weight:600;list-style:none}
+  details.panel summary::-webkit-details-marker{display:none}
+  details.panel ul{margin:10px 0 0;padding:0;list-style:none}
+  details.panel li{padding:8px 0;border-top:1px solid var(--line);font-size:13px}
   @media print{.topbar,.toolbar,.chips,.hint,.ribbon,.wknav{display:none}main{overflow:visible}}
 </style>
 </head>
-<body data-view="schedule">
+<body data-view="today">
 <header class="topbar">
   <span style="font-size:22px">🗓️</span>
   <h1>Timetable</h1>
@@ -119,6 +130,18 @@
 </header>
 
 <main>
+  <!-- ============ TODAY PAGE ============ -->
+  <section id="view-today" class="view">
+    <h2 style="margin-top:4px">Today</h2>
+    <p id="todayDate" class="wklabel"></p>
+    <div class="panel" id="busyCard" style="display:flex;gap:14px;align-items:center"></div>
+    <div class="panel tcard" id="wordCard"></div>
+    <button id="skipWordBtn" class="sec" style="width:100%;margin:-4px 0 14px">Skip — I already know this word</button>
+    <details class="panel"><summary>Word history</summary><ul id="wordHist"></ul></details>
+    <div class="panel tcard" id="factCard"></div>
+    <div class="panel tcard" id="topicCard"></div>
+  </section>
+
   <!-- ============ SCHEDULE PAGE ============ -->
   <section id="view-schedule" class="view">
     <div class="wknav">
@@ -178,6 +201,16 @@
     </div>
 
     <div class="panel">
+      <h2>Learning topics</h2>
+      <p class="hint">Pick the subjects for your daily fact and reading topic on the Today page. Change these any time.</p>
+      <div id="catList" class="chips" style="flex-wrap:wrap;overflow:visible"></div>
+      <div class="row" style="margin-top:8px">
+        <button id="catAll" class="sec tiny" style="flex:0 0 auto">Select all</button>
+        <button id="catNone" class="sec tiny" style="flex:0 0 auto">Clear</button>
+      </div>
+    </div>
+
+    <div class="panel">
       <h2>Get it on your phone</h2>
       <p class="hint">Scan to open the app on your phone <b>with your current schedule loaded</b>, then use <b>Add to Home Screen</b> to install it. The code updates automatically whenever you make a change.</p>
       <div style="text-align:center;margin:6px 0 4px"><img id="qrImg" alt=""></div>
@@ -213,6 +246,7 @@
 </main>
 
 <nav class="ribbon">
+  <button data-nav="today"><span class="ic">☀️</span>Today</button>
   <button data-nav="schedule"><span class="ic">🗓️</span>Schedule</button>
   <button data-nav="activities"><span class="ic">📋</span>Activities</button>
   <button data-nav="reminders"><span class="ic">🔔</span>Reminders</button>
@@ -268,6 +302,7 @@
 </dialog>
 
 <script src="qrcode.min.js"></script>
+<script src="content.js"></script>
 <script>
 const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const TOD={any:[0,1440],morning:[0,720],afternoon:[720,1020],evening:[1020,1440]};
@@ -375,6 +410,7 @@ function schedule(cfg,acts,week,order,pins){
 const DEF={
   cfg:{dayStart:480,dayEnd:1320,days:[0,1,2,3,4,5,6]},
   notif:false,
+  learn:{cats:LEARN_CATEGORIES.map(c=>c.id),word:{date:'',id:null,used:[],history:[]},fact:{date:'',id:null,used:[]},topic:{date:'',id:null,used:[]}},
   pins:[],
   reminders:[
     {id:'r1',name:'Take meds',day:0,time:'08:00',color:'#ffff00'},
@@ -391,7 +427,10 @@ const DEF={
   ]
 };
 let S=loadState();
-function loadState(){try{const s=JSON.parse(localStorage.timetable);s.pins=s.pins||[];s.reminders=s.reminders||[];return s;}catch(e){return structuredClone(DEF);}}
+function normLearn(l){l=l||{};l.cats=l.cats||LEARN_CATEGORIES.map(c=>c.id);
+  for(const k of['word','fact','topic']){l[k]=l[k]||{};l[k].used=l[k].used||[];if(!('id'in l[k]))l[k].id=null;l[k].date=l[k].date||'';}
+  l.word.history=l.word.history||[];return l;}
+function loadState(){try{const s=JSON.parse(localStorage.timetable);s.pins=s.pins||[];s.reminders=s.reminders||[];s.learn=normLearn(s.learn);return s;}catch(e){return structuredClone(DEF);}}
 function save(){localStorage.timetable=JSON.stringify(S);renderQR();} // QR carries the schedule, so refresh it on every change
 
 // Import shared-link / QR data — on first load AND whenever #data changes (re-scanning while open,
@@ -412,7 +451,8 @@ window.addEventListener('hashchange',()=>importFromHash(true));
 
 // ---------- nav (bottom ribbon) ----------
 function setView(v){document.body.dataset.view=v;
-  document.querySelectorAll('.ribbon button').forEach(b=>b.setAttribute('aria-current',b.dataset.nav===v));}
+  document.querySelectorAll('.ribbon button').forEach(b=>b.setAttribute('aria-current',b.dataset.nav===v));
+  if(v==='today')renderToday();}
 document.querySelectorAll('.ribbon button').forEach(b=>b.onclick=()=>setView(b.dataset.nav));
 
 // ---------- setup: day window ----------
@@ -532,6 +572,75 @@ $('dlgSave').onclick=()=>{
   if(!editing)S.acts.push(a);
   save();$('dlg').close();renderActs();gen();
 };
+
+// ---------- Today page: learning + busyness ----------
+const lhash=s=>{let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return h.toString(36);};
+const catLabel=id=>(LEARN_CATEGORIES.find(c=>c.id===id)||{}).label||id;
+const wordPool=()=>WORDS.map(w=>({...w,id:lhash(w.w)}));
+const factPool=()=>{const sel=new Set(S.learn.cats);return FACTS.filter(f=>sel.has(f.cat)).map(f=>({...f,id:lhash(f.text)}));};
+const topicPool=()=>{const sel=new Set(S.learn.cats);return TOPICS.filter(t=>sel.has(t.cat)).map(t=>({...t,id:lhash(t.title)}));};
+// pick a new item: only from unused; when all have been used, reset and reuse
+function advanceLearn(stream,pool){
+  const st=S.learn[stream],today=isoDate(new Date());
+  let unused=pool.filter(x=>!st.used.includes(x.id));
+  if(!unused.length){st.used=[];unused=pool.slice();}
+  if(!unused.length)return null;                      // pool empty (no categories selected)
+  const pick=unused[Math.floor(Math.random()*unused.length)];
+  st.id=pick.id;st.date=today;st.used.push(pick.id);
+  if(stream==='word')st.history.push({id:pick.id,date:today});
+  save();return pick;
+}
+// one item per calendar day; re-pick if none set today or the current one left the pool (e.g. category off)
+function dailyLearn(stream,pool){
+  const st=S.learn[stream],today=isoDate(new Date());
+  if(st.date===today&&st.id&&pool.some(x=>x.id===st.id))return pool.find(x=>x.id===st.id);
+  return advanceLearn(stream,pool);
+}
+function skipWord(){advanceLearn('word',wordPool());renderToday();}
+function todaySummary(){
+  const wd=(new Date().getDay()+6)%7,mon=mondayOf(new Date());
+  const pl=schedule(S.cfg,S.acts,{parity:weekParity(mon),key:isoDate(mon)},null,S.pins).placements.filter(p=>p.day===wd);
+  const rem=(S.reminders||[]).filter(r=>r.day===wd);
+  return{count:pl.length,minutes:pl.reduce((s,p)=>s+(p.end-p.start),0),reminders:rem.length};
+}
+function renderWordHistory(){
+  const seen=new Set(),pool=wordPool(),rows=[];
+  for(let i=S.learn.word.history.length-1;i>=0;i--){const h=S.learn.word.history[i];if(seen.has(h.id))continue;seen.add(h.id);
+    const w=pool.find(x=>x.id===h.id);if(w)rows.push(`<li><b>${w.w}</b> — ${w.def} <span class="meta">(${h.date})</span></li>`);}
+  $('wordHist').innerHTML=rows.length?rows.join(''):'<li class="meta">No words yet — come back tomorrow.</li>';
+}
+function renderToday(){
+  const d=new Date();
+  $('todayDate').textContent=DAYS[(d.getDay()+6)%7]+', '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear();
+  const s=todaySummary(),hrs=s.minutes/60|0,mm=s.minutes%60;
+  const dur=s.minutes?`${hrs?hrs+'h ':''}${mm?mm+'m':''}`.trim():'0m';
+  const lvl=s.minutes===0?['Clear day','Nothing scheduled — enjoy the free time.']
+    :s.minutes<120?['Light day','A relaxed day with a little on.']
+    :s.minutes<300?['Steady day','A comfortable amount on today.']
+    :['Busy day','A full schedule — pace yourself.'];
+  $('busyCard').innerHTML=`<div class="bigstat">${s.count}</div><div>
+    <b>${lvl[0]}</b><div class="meta">${lvl[1]}</div>
+    <div class="meta">${s.count} activit${s.count===1?'y':'ies'} · ${dur} scheduled · ${s.reminders} reminder${s.reminders===1?'':'s'}</div></div>`;
+  const w=dailyLearn('word',wordPool());
+  $('wordCard').innerHTML=w?`<div class="kicker">Word of the day</div><div class="word">${w.w}</div>
+    <div class="def">${w.def}</div>${w.ex?`<div class="ex">“${w.ex}”</div>`:''}`:'';
+  const f=dailyLearn('fact',factPool());
+  $('factCard').innerHTML=f?`<div class="kicker">Fact of the day · ${catLabel(f.cat)}</div><div class="body">${f.text}</div>`
+    :`<div class="kicker">Fact of the day</div><div class="body meta">Pick some topics in Settings to get a daily fact.</div>`;
+  const t=dailyLearn('topic',topicPool());
+  $('topicCard').innerHTML=t?`<div class="kicker">Read about today · ${catLabel(t.cat)}</div>
+    <div class="word" style="font-size:18px">${t.title}</div><div class="def">${t.blurb}</div>`
+    :`<div class="kicker">Read about today</div><div class="body meta">Pick some topics in Settings.</div>`;
+  renderWordHistory();
+}
+$('skipWordBtn').onclick=skipWord;
+function renderCats(){
+  const sel=new Set(S.learn.cats);
+  $('catList').innerHTML=LEARN_CATEGORIES.map(c=>`<button class="sec tiny" data-cat="${c.id}" aria-current="${sel.has(c.id)}" style="flex:0 0 auto">${c.label}</button>`).join('');
+  $('catList').querySelectorAll('button').forEach(b=>b.onclick=()=>{const s=new Set(S.learn.cats);s.has(b.dataset.cat)?s.delete(b.dataset.cat):s.add(b.dataset.cat);S.learn.cats=[...s];save();renderCats();renderToday();});
+}
+$('catAll').onclick=()=>{S.learn.cats=LEARN_CATEGORIES.map(c=>c.id);save();renderCats();renderToday();};
+$('catNone').onclick=()=>{S.learn.cats=[];save();renderCats();renderToday();};
 
 // ---------- month / week navigator ----------
 function renderWkNav(){
@@ -810,7 +919,7 @@ if('serviceWorker'in navigator&&location.protocol.startsWith('http')){
 }
 
 // ---------- boot ----------
-renderCfg();renderActs();renderReminders();setView('schedule');gen();
+renderCfg();renderActs();renderReminders();renderCats();gen();setView('today');
 updateNotifStatus();renderQR();setInterval(notifTick,30000);
 
 // ---------- self-test: open timetable.html#test ----------
@@ -859,6 +968,18 @@ function runTests(){
   const morn=schedule(cfg,[{id:'m',name:'M',type:'flex',dur:60,count:1,freq:'weekly',tod:'morning'}],
     {parity:'A',key:'k'},{m:0.42},[]).placements.find(x=>x.act.id==='m');
   console.assert(morn.start>=0&&morn.end<=720,'shuffled morning activity stays before noon');
+  // Today learning: cycle through all unused first, reuse only once exhausted; categories filter facts
+  const savedLearn=JSON.stringify(S.learn);
+  S.learn.word={date:'',id:null,used:[],history:[]};
+  const N=wordPool().length,ids=new Set();
+  for(let k=0;k<N;k++)ids.add(advanceLearn('word',wordPool()).id);
+  console.assert(ids.size===N&&S.learn.word.used.length===N,'word rotation shows every word once before repeating');
+  advanceLearn('word',wordPool());
+  console.assert(S.learn.word.used.length===1,'used list resets after all words seen (reuse)');
+  console.assert(S.learn.word.history.length===N+1,'each shown word is recorded in history');
+  S.learn.cats=['physics'];
+  console.assert(factPool().length&&factPool().every(f=>f.cat==='physics'),'fact pool respects selected categories');
+  S.learn=JSON.parse(savedLearn);save();
   console.log('%cself-test complete — check for assertion failures above','color:green');
 }
 if(location.hash==='#test')runTests();
