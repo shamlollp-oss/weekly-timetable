@@ -11,10 +11,10 @@
 <title>Weekly Timetable</title>
 <style>
   :root{
-    --bg:#e8ecf4;--panel:#e8ecf4;--line:#d4dae6;--text:#2a2f3a;--muted:#79808f;
-    --accent:#3b6ef5;--warn:#d23b52;--grid:#d9dfea;--slotpx:24px;
-    --hour:#ccd3e2;--half:#dee4ef;
-    --sh-d:#c4cbd9;--sh-l:#ffffff;
+    --bg:#eef5e9;--panel:#eef5e9;--line:#d6ddcf;--text:#2a2f2a;--muted:#79857a;
+    --accent:#6fa56c;--warn:#d23b52;--grid:#dde6d6;--slotpx:24px;
+    --hour:#d6ddcf;--half:#e4ebdf;
+    --sh-d:#ccd5c4;--sh-l:#ffffff;
     --nm:5px 5px 12px var(--sh-d),-5px -5px 12px var(--sh-l);
     --nm-sm:3px 3px 7px var(--sh-d),-3px -3px 7px var(--sh-l);
     --nm-in:inset 3px 3px 6px var(--sh-d),inset -3px -3px 6px var(--sh-l);
@@ -134,6 +134,19 @@
   .histlist{list-style:none;margin:0;padding:0}
   .histlist li{padding:10px 2px;border-top:1px solid var(--line);font-size:14px;line-height:1.5}
   .histlist li:first-child{border-top:none}
+  @media (max-width:480px){
+    main{padding:12px}
+    .topbar h1{font-size:15px}
+    .panel{padding:14px}
+    .bigstat{font-size:36px;min-width:46px}
+    .tcard .word{font-size:21px}
+    .ribbon button{font-size:9.5px;padding:9px 1px}
+    .ribbon button .ic{font-size:19px}
+  }
+  @media (max-width:400px){
+    .remrow{flex-wrap:wrap}
+    .remrow #rName{flex:1 1 100%}
+  }
   @media print{.topbar,.toolbar,.chips,.hint,.ribbon,.wknav{display:none}main{overflow:visible}}
 </style>
 </head>
@@ -191,13 +204,16 @@
       <h2>Reminders</h2>
       <p class="hint">Neon notes that sit beside your schedule — they can overlap busy slots.</p>
       <ul id="remList" class="acts"></ul>
-      <div class="row" style="margin-top:8px">
+      <div class="row remrow" style="margin-top:8px">
         <input id="rName" placeholder="Reminder" style="flex:2">
         <select id="rDay"></select>
         <input id="rTime" type="time" step="900" style="flex:0 0 100px">
       </div>
       <div id="rSwatches" class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap"></div>
-      <button id="rAdd" class="sec" style="width:100%;margin-top:10px">+ Add reminder</button>
+      <div class="row" style="margin-top:10px">
+        <button id="rAdd" class="sec">+ Add reminder</button>
+        <button id="rCancel" class="sec hide" style="flex:0 0 auto">Cancel</button>
+      </div>
     </div>
   </section>
 
@@ -313,14 +329,21 @@
   </div>
 </dialog>
 
-<!-- reminder viewer -->
+<!-- reminder popup: viewer (tap a square) or due alert (fires at its time) -->
 <dialog id="remDlg">
   <h1 style="font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Reminder</h1>
   <p id="remDlgTime" class="meta" style="margin:0 0 10px"></p>
   <p id="remDlgBody" style="font-size:15px;font-weight:600;margin:0 0 16px;padding-left:8px"></p>
-  <div class="row">
+  <div id="remDueBtns" class="hide">
+    <label>Snooze for</label>
+    <select id="remSnooze"></select>
+    <div class="row" style="margin-top:12px">
+      <button id="remComplete">Complete</button>
+      <button id="remSnoozeBtn" class="sec">Snooze</button>
+    </div>
+  </div>
+  <div id="remViewBtns" class="row">
     <button id="remDlgClose">Close</button>
-    <button id="remDlgDel" class="sec">Delete</button>
   </div>
 </dialog>
 
@@ -514,6 +537,7 @@ function renderSwatches(){
   $('rSwatches').innerHTML=NEON.map(c=>`<button class="swatch" data-c="${c}" aria-current="${c===rColor}" style="background:${c}"></button>`).join('');
   $('rSwatches').querySelectorAll('.swatch').forEach(b=>b.onclick=()=>{rColor=b.dataset.c;renderSwatches();});
 }
+let editingRem=null;
 function renderReminders(){
   $('rDay').innerHTML=DAYS.map((d,i)=>`<option value="${i}">${d}</option>`).join('');
   const ul=$('remList');ul.innerHTML='';
@@ -521,28 +545,51 @@ function renderReminders(){
     const li=document.createElement('li');
     li.innerHTML=`<span class="dot" style="background:${r.color}"></span>
       <span class="grow"><b>${r.name}</b><span class="meta">${DAYS[r.day]} · ${r.time}</span></span>`;
+    const ed=document.createElement('button');ed.className='sec tiny';ed.textContent='Edit';ed.onclick=()=>startEditRem(r);
     const del=document.createElement('button');del.className='sec tiny';del.textContent='Delete';
-    del.onclick=()=>{S.reminders=S.reminders.filter(x=>x!==r);save();renderReminders();gen();};
-    li.append(del);ul.append(li);
+    del.onclick=()=>{if(editingRem===r)resetRemForm();S.reminders=S.reminders.filter(x=>x!==r);save();renderReminders();gen();};
+    li.append(ed,del);ul.append(li);
   });
   renderSwatches();
   scheduleTriggers();
 }
+function startEditRem(r){
+  editingRem=r;rColor=r.color;
+  $('rName').value=r.name;$('rDay').value=r.day;$('rTime').value=r.time;
+  renderSwatches();$('rAdd').textContent='Save changes';$('rCancel').classList.remove('hide');
+  $('rName').focus();$('rName').scrollIntoView({block:'center'});
+}
+function resetRemForm(){editingRem=null;$('rName').value='';$('rAdd').textContent='+ Add reminder';$('rCancel').classList.add('hide');}
+$('rCancel').onclick=resetRemForm;
 $('rAdd').onclick=()=>{
   const name=$('rName').value.trim(),time=$('rTime').value;
   if(!name||!time){alert('Add a name and a time.');return;}
-  S.reminders.push({id:uid(),name,day:+$('rDay').value,time,color:rColor});
-  save();$('rName').value='';renderReminders();gen();
+  if(editingRem){editingRem.name=name;editingRem.day=+$('rDay').value;editingRem.time=time;editingRem.color=rColor;}
+  else S.reminders.push({id:uid(),name,day:+$('rDay').value,time,color:rColor});
+  save();resetRemForm();renderReminders();gen();
 };
-function openRemDlg(id){
-  const r=S.reminders.find(x=>x.id===id);if(!r)return;
+function fillRemDlg(r){
   $('remDlgTime').textContent=DAYS[r.day]+' · '+r.time;
-  $('remDlgBody').textContent=r.name;
-  $('remDlgBody').style.borderLeft='4px solid '+r.color;
-  $('remDlgDel').onclick=()=>{S.reminders=S.reminders.filter(x=>x!==r);save();renderReminders();gen();$('remDlg').close();};
+  $('remDlgBody').textContent=r.name;$('remDlgBody').style.borderLeft='4px solid '+r.color;
+}
+function openRemDlg(id){                       // viewer: tapping a reminder square
+  const r=S.reminders.find(x=>x.id===id);if(!r)return;
+  fillRemDlg(r);
+  $('remDueBtns').classList.add('hide');$('remViewBtns').classList.remove('hide');
   $('remDlg').showModal();
 }
+let currentDue=null,snoozed=[];                // snoozed: {id, at(ms)} pending re-alerts
+function openDueDlg(r){                         // alert popup when a reminder falls due
+  if($('remDlg').open)return;                   // one popup at a time
+  currentDue=r;fillRemDlg(r);
+  $('remViewBtns').classList.add('hide');$('remDueBtns').classList.remove('hide');
+  $('remDlg').showModal();
+}
+$('remSnooze').innerHTML=[5,10,15,20,25,30,35,40,45,50,55,60].map(m=>`<option value="${m}">${m} minutes</option>`).join('');
+$('remSnooze').value='10';
 $('remDlgClose').onclick=()=>$('remDlg').close();
+$('remComplete').onclick=()=>{const id=currentDue&&currentDue.id;snoozed=snoozed.filter(s=>s.id!==id);$('remDlg').close();};
+$('remSnoozeBtn').onclick=()=>{if(currentDue)snoozed.push({id:currentDue.id,at:Date.now()+ +$('remSnooze').value*60000});$('remDlg').close();};
 
 // ---------- activity dialog ----------
 let editing=null;
@@ -630,7 +677,7 @@ function todaySummary(){
 // day-mood theming: today's load picks a palette that tints the whole app
 const DAY_META={
   flexible:{names:['Flexible Day','Gentle Flow'],desc:'A relaxed day with room to breathe.',bg:'#E9F6F9',accent:'#57AFC2'},
-  balanced:{names:['Balanced Day','Steady Day'],desc:'A comfortable, steady amount on today.',bg:'#EEF5E9',accent:'#6FA56C'},
+  balanced:{names:['Balanced Day','Steady Day'],desc:'A comfortable, steady amount on today.',bg:'#d5f9bc',accent:'#9df162'},
   focus:{names:['Focus Day','Focused Momentum'],desc:'A full, focused day — pace yourself and ride the momentum.',bg:'#F0EBFA',accent:'#7866B8'},
 };
 function shade(hex,amt){const n=parseInt(hex.slice(1),16),r=n>>16&255,g=n>>8&255,b=n&255,
@@ -902,10 +949,12 @@ async function scheduleTriggers(){
     }
   }catch(e){}
 }
+function triggerReminder(r){fireReminder(r);openDueDlg(r);} // system notification + in-app Complete/Snooze popup
 function notifTick(){
   if(!S.notif||!('Notification'in window)||Notification.permission!=='granted')return;
-  const now=new Date();
-  dueReminders(now,S.reminders,notifFired).forEach(r=>{notifFired.add(isoDate(now)+r.id);fireReminder(r);});
+  const now=new Date(),t=now.getTime();
+  dueReminders(now,S.reminders,notifFired).forEach(r=>{notifFired.add(isoDate(now)+r.id);triggerReminder(r);});
+  for(let i=snoozed.length-1;i>=0;i--)if(snoozed[i].at<=t){const s=snoozed.splice(i,1)[0],r=S.reminders.find(x=>x.id===s.id);if(r)triggerReminder(r);}
 }
 function updateNotifStatus(){
   const has='Notification'in window,perm=has?Notification.permission:'unsupported';
